@@ -17,7 +17,6 @@ ModularPainter is a command line tool. It can be installed with...
 Contribute
 ----------
 
-  - Issue Tracker: `github <https://github.com/Puumanamana/module_painting/issues>`_
-  - Source Code: `github <https://github.com/Puumanamana/module_painting>`_
-
+- Issue Tracker: `github <https://github.com/Puumanamana/module_painting/issues>`_
+- Source Code: `github <https://github.com/Puumanamana/module_painting>`_
 
