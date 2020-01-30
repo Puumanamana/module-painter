@@ -58,13 +58,13 @@ def blast_sequences(query, db):
     print(make_db)
     make_db()
     
-    blastn_on_db = NcbiblastnCommandline(query=str(query), db=db_path, out=blast_path, outfmt=5)
+    blastn_on_db = NcbiblastnCommandline(query=str(query), db=db_path, out=blast_path, outfmt=5, gapopen=20, gapextend=5)
     print(blastn_on_db)
     blastn_on_db()
 
     return blast_path
 
-def filter_blast_results(blast_file, output, min_id=0.8, min_cov=0.5, show=False):
+def filter_blast_results(blast_file, output, min_id=0.8, min_cov=0.5, min_hsp_len=30, show=False):
 
     species = []
 
@@ -84,27 +84,21 @@ def filter_blast_results(blast_file, output, min_id=0.8, min_cov=0.5, show=False
                 pct_coverage = covered / record.query_length
 
                 # print("{} on {}: Coverage={}, Identity={}".format(record.query, hit.hit_def, pct_coverage, pct_identity))
-                if pct_coverage > 1:
-                    boundaries = [(hsp.query_start, hsp.query_end) for hsp in hit.hsps]
-                    print('\n'.join(map(str, boundaries)))
-                    # import ipdb;ipdb.set_trace()
+                # if pct_coverage > 1:
+                #     boundaries = [(hsp.query_start, hsp.query_end) for hsp in hit.hsps]
+                #     print('\n'.join(map(str, boundaries)))
 
                 if pct_identity > min_id and pct_coverage > min_cov:
                     hit_id = hit.hit_def.split(' ')[0]
 
                     entry = [[record_id, hit_id, hsp.query_start, hsp.query_end, hsp.identities/hsp.align_length]
-                             for hsp in hit.hsps]
+                             for hsp in hit.hsps if abs(hsp.query_end-hsp.query_start) > min_hsp_len]
                     species += entry
                     selected.append(hit_id)
-                    # species[record_id][hit_id] = [(hsp.query_start, hsp.query_end, hsp.identities/hsp.align_length)
-                    #                               for hsp in hit.hsps]
-                    # species[record.query].append(hit.hit_def)
 
-        if (len(selected) > 1) and show:
+        if (len(selected) > 10) and show:
             display_alignment(record, selected, output=output)
-
-    if show:
-        plt.show()
+            plt.show()
 
     return pd.DataFrame(species, columns=['target', 'source', 'tstart', 'tend', 'identity'])
 
@@ -116,13 +110,12 @@ def check_modules_order():
     Make sure the order of the modules is the same in all the individuals in the species group
     '''
 
-    print("Module order not implemented yet!")
     print("NB: coverage can be > 1 (overlapping HSPs) --> BLAST with non maximal coverage?")
 
-def split_communities(query, db, output=None, min_id=None, min_cov=None, show=False):
+def split_communities(query, db, output=None, show=False, **blast_filter_prms):
 
     blast_file = blast_sequences(query, db)
-    species = filter_blast_results(blast_file, output, min_id=min_id, min_cov=min_cov, show=show)
+    species = filter_blast_results(blast_file, output, show=show, **blast_filter_prms)
     summarize_results(species)
 
     check_modules_order()

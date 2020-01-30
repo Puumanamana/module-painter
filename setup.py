@@ -14,5 +14,6 @@ setup(name='modular_painter',
           'numpy',
           'pandas',
           'Biopython',
-          'argparse'
+          'argparse',
+          'bokeh>=1.4'
       ])

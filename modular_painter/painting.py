@@ -3,35 +3,8 @@ import pandas as pd
 import numpy as np
 from Bio import SeqIO
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-def show_painting(aln, genome_length=None):
-    size_of_groups = (aln.tend - aln.tstart).values
-
-    all_sources = aln.source.explode().unique()
-    colors = sns.hls_palette(len(all_sources), l=.4, s=.7)
-
-    color_map = dict(zip(all_sources, colors))
-    color_map['NA'] = (1, 1, 1)
-    colors_seq = [color_map[x[0]] if len(x) == 1
-                 else (0, 0, 0)
-                 for x in aln.source]
+from display import donut_display
     
-    labels = aln.source.apply(lambda x: '/'.join(sorted(x)))
-    labels[labels=='NA'] = ''
-
-    # Create a pieplot
-    fig, ax = plt.subplots(figsize=(10, 10))
-    patches, texts = ax.pie(size_of_groups, colors=colors_seq, labels=labels,
-                            rotatelabels=90, labeldistance=1.01, textprops={'fontsize': 10})
-    # add a circle at the center
-    my_circle = plt.Circle((0,0), 0.7, color='white')
-    ax.add_artist(my_circle)
-
-    plt.axis('equal')
-    plt.show()
-
 def rotate_genome(genome):
     '''
     Possible approaches: 
@@ -40,16 +13,6 @@ def rotate_genome(genome):
     '''
 
     return str(genome)
-
-def paint_sequence(intervals):
-    '''
-    Paint phage q with phage p:
-    - Simple blast?
-    - Result shape = array/dataframe with 5 columns: [s1, e1, s2, e2, identity]
-      sorted by {1: s2, 2: e2}
-    '''
-
-    pass
 
 def trim_results(painting):
     '''
@@ -72,22 +35,24 @@ def trim_results(painting):
         | (painting_filt.tend == painting_filt.tend.min())
     ]
 
-    # painting_filt = painting_filt.explode('source').set_index('source')
-
     return painting_filt
 
-def fill_missing_data(painting, genome_length):
+def fill_missing_data(painting, genome_length, max_merge_dist=3):
     '''
     Make up missing pieces for the lee_and_lee algorithm
     '''
 
     fill = []
-    prev_end = 0
+    prev_end = 1
 
-    for (start, end, _, _) in painting.values:
-        if start > prev_end:
-            fill.append([prev_end, start, ['NA'], [1]])
-        prev_end = end
+    for idx in painting.index:
+        dist = painting.tstart[idx] - prev_end
+
+        if 0 < dist <= max_merge_dist:
+            painting.loc[idx, 'tstart'] -= dist
+        elif dist > max_merge_dist:
+            fill.append([prev_end, painting.tstart[idx], ['NC'], [1]])
+        prev_end = painting.tend[idx]
 
     fill = pd.DataFrame(fill, columns=['tstart', 'tend', 'source', 'identity'])
 
@@ -119,7 +84,7 @@ def lee_and_lee(painting):
     Run Lee and Lee algorithm to compute the optimal cover and the alternative parents
     {painting} is a pandas DataFrame with 4 columns: 
       - [tstart, tend] are the HSP boundaries
-      - source is the name of the HSP source ("NA" corresponds to no coverage)
+      - source is the name of the HSP source ("NC" corresponds to no coverage)
       - identity is the pct_identity for this alignement
     '''
 
@@ -160,7 +125,7 @@ def lee_and_lee(painting):
         t_[B_i] = i
 
         # To change since the genome is circular
-        covered = (painting.tend[B_i] - painting.tstart[S[0]]) >= genome_len
+        covered = (painting.tend[B_i] - painting.tstart[S[0]] + 1) >= genome_len
 
     k = i
     # At this point we have an initial cover of size k
@@ -168,7 +133,7 @@ def lee_and_lee(painting):
     done = False
     while not done:
         i += 1
-        B_i = successors[i]
+        B_i = successors[B_i]
 
         inter_B1 = (painting.tstart[S[0]] < painting.tend[B_i] < painting.tend[S[0]]) \
             or (painting.tstart[S[0]] < painting.tstart[B_i] < painting.tend[S[0]])
@@ -183,11 +148,9 @@ def lee_and_lee(painting):
             r_[B_i] = r_[B_i] + n_interv
             t_[B_i] = i
 
-    show_painting(painting.loc[S])
-            
     return painting.loc[S]
     
-def paint_all(fastas, species):
+def paint_all(fastas, species, max_merge_dist=None):
     '''
     Paint all species groups in population
     '''
@@ -198,21 +161,16 @@ def paint_all(fastas, species):
         for fasta in fastas
     ]))
 
-    # paintings = {
-    #     subject: {
-    #         painter: paint_sequence(intervals)
-    #         for (painter, intervals) in species[subject].items()
-    #     }
-    #     for subject in species
-    # }
-
     result = {}
     for target in species.target.unique():
+        print('processing {}'.format(target))
         subset = species.loc[species.target == target].drop('target', axis=1)
         painting_trimmed = trim_results(subset)
-        painting_full = fill_missing_data(painting_trimmed, genome_lengths[target])
+        painting_full = fill_missing_data(painting_trimmed, genome_lengths[target], max_merge_dist=max_merge_dist)
         optimal_coverage = lee_and_lee(painting_full)
 
         result[target] = optimal_coverage
 
-    return optimal_coverage
+        donut_display(optimal_coverage.copy(), '/tmp/cedric/modular_painting_tests/painting_{}.html'.format(target), circular=False)
+        
+    return result
