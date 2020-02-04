@@ -1,3 +1,4 @@
+from time import time
 from math import pi
 import pandas as pd
 
@@ -6,7 +7,7 @@ from bokeh.plotting import figure
 from bokeh.transform import cumsum
 from bokeh.palettes import Set1, Set3
 
-TOOLS = "pan,wheel_zoom,box_zoom,reset,save,hover"
+TOOLS = "box_zoom,reset,hover"
 TOOLTIPS = "@source - identity=@identity{0.00%}"
 PALETTE = Set1[9] + Set3[12]
 
@@ -19,10 +20,12 @@ def access(L, i):
 
 def donut_display(cov, output, title="", circular=True, **plot_kw):
 
+    data = cov.to_pandas()
+
     # Set up different colors per source bacteriophage
-    sources = cov.data.source.unique()
-    cov.data.identity /= cov.data.tend - cov.data.tstart
-    data = cov.data.groupby(['tstart', 'tend'], as_index=False).agg(list)
+    sources = data.source.unique()
+    data.identity /= data.end - data.start
+    data = data.groupby(['start', 'end'], as_index=False).agg(list)
 
     color_map = pd.Series(dict(
         [(s, PALETTE[i % len(PALETTE)]) for (i, s) in enumerate(sources)]
@@ -35,8 +38,8 @@ def donut_display(cov, output, title="", circular=True, **plot_kw):
     max_depth = data.source.apply(len).max()
 
     # Additional columns for plotting
-    data['mid'] = (data.tstart + data.tend) / 2
-    data['fs'] = data.tend - data.tstart
+    data['mid'] = (data.start + data.end) / 2
+    data['fs'] = data.end - data.start
     data['angle'] = data.fs / data.fs.sum() * 2*pi
     data['color'] = data.source.apply(lambda x: color_map.loc[x].tolist())
 

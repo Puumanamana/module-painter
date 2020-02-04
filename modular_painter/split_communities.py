@@ -95,7 +95,7 @@ def filter_blast_results(blast_file, output, min_id=0.8, min_cov=0.5, min_hsp_le
             display_alignment(record, selected, output=output)
             plt.show()
 
-    return pd.DataFrame(species, columns=['target', 'source', 'tstart', 'tend', 'identity'])
+    return pd.DataFrame(species, columns=['target', 'source', 'start', 'end', 'identity'])
 
 def summarize_results(species):
     print(species.groupby('target').source.agg(lambda x: len(set(x))))
