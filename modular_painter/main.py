@@ -1,7 +1,7 @@
-from parser import parse_args
-from split_communities import split_communities
-from painting import paint_all
-from clustering import get_subspecies
+from modular_painter.parser import parse_args
+from modular_painter.split_communities import split_communities
+from modular_painter.painting import paint_all
+from modular_painter.clustering import get_subspecies
 
 def main():
     '''
@@ -13,7 +13,9 @@ def main():
                                 min_id=args.min_id, min_cov=args.min_cov, min_hsp_len=args.min_hsp_len,
                                 show=args.show)
 
-    paintings = paint_all(args.fasta, species, max_merge_dist=args.max_merge_dist)
+    paintings = paint_all(args.fasta, species,
+                          min_module_size=args.min_module_size,
+                          arc_eq_diffs=args.arc_eq_diffs)
 
     get_subspecies(paintings)
 
