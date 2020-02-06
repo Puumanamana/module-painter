@@ -1,4 +1,3 @@
-from time import time
 from math import pi
 import pandas as pd
 
@@ -8,7 +7,10 @@ from bokeh.transform import cumsum
 from bokeh.palettes import Set1, Set3
 
 TOOLS = "box_zoom,reset,hover"
-TOOLTIPS = "@source - identity=@identity{0.00%}"
+TOOLTIPS = [("source", "@source"),
+            ("identity", "@identity{0.00%}"),
+            ("interval", "@start-@end"),
+            ("position", "$x{0,0}")]
 PALETTE = Set1[9] + Set3[12]
 
 def access(L, i):
@@ -29,7 +31,7 @@ def donut_display(cov, output, title="", circular=True, **plot_kw):
 
     color_map = pd.Series(dict(
         [(s, PALETTE[i % len(PALETTE)]) for (i, s) in enumerate(sources)]
-        + [('NC', '#FFFFFF')]
+        + [('NoCov', '#FFFFFF')]
         + [('None', '#FFFFFF')]        
     ))
 
@@ -61,7 +63,7 @@ def donut_display(cov, output, title="", circular=True, **plot_kw):
         data_i.fillna('None', inplace=True)
 
         # Hide the uncovered sections
-        data_i['alpha'] = (data_i.source != 'None').astype(int)
+        data_i['alpha'] = (data_i.source != 'None').astype(int) * 0.6
 
         if circular:
             outer_r = (max_depth - depth)*0.2
@@ -76,9 +78,6 @@ def donut_display(cov, output, title="", circular=True, **plot_kw):
                    fill_color='color', line_alpha=0, line_width=0, fill_alpha='alpha',
                    legend_group='source')
 
-    p.axis.axis_label=None
-    p.axis.visible=False
-    p.grid.grid_line_color = None
 
     lkup = {x.label['value']: x for x in p.legend.items
             if x.label['value'] not in ['None', 'NC']}

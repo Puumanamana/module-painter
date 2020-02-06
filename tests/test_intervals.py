@@ -1,10 +1,13 @@
 import pandas as pd
 from modular_painter.intervals import Arc, Coverage
 
-def arc_data(x=1, y=20, n=2):
-    intervals = [
-        ['V{}'.format(i), x, y, 1] for i in range(n)
-    ]
+def arc_data(x=1, y=20, n=2, labels=None):
+    if labels is None:
+        labels = ['V{}'.format(i) for i in range(n)]
+    elif isinstance(labels, str):
+        labels = [labels]
+
+    intervals = list(zip(labels, [x]*n, [y]*n, [1]*n))
 
     data = pd.DataFrame(intervals, columns=['source', 'start', 'end', 'identity'])
     return data
@@ -41,12 +44,14 @@ def test_arc_intersect():
     arc1 = Arc(arc_data(1, 10), 'target', 100)
     arc2 = Arc(arc_data(5, 20, 2), 'target', 100)
     arc3 = Arc(arc_data(90, 4), 'target', 100)
+    arc4 = Arc(arc_data(12, 20, 3), 'target', 100)
 
     assert arc1.intersect(arc2)
     assert arc1.intersect(arc3)
     assert arc3.intersect(arc1)
-    assert not arc3.intersect(arc2)
-    assert not arc2.intersect(arc3)
+    assert arc3.intersect(arc2)
+    assert arc2.intersect(arc3)
+    assert not arc1.intersect(arc4)
 
 def test_coverage_init():
     arc1 = Arc(arc_data(1, 10, 1), 'target', 100)
@@ -71,39 +76,45 @@ def test_coverage_from_pandas():
     assert pos[5, 0] == 90 and pos[5, 1] == 130
     assert cov2.target == 'TARGET'
 
-def test_coverage_insert():
-    cov = Coverage.from_pandas(coverage_data(), 'target', modulo=100)
-    new = Arc(arc_data(25, 55), 'target', 100)
-
-    l1 = len(cov)
-
-    cov.insert(new)
-
-    assert cov.dirty
-    assert len(cov.data) == l1 + 1
-
 def test_coverage_successor():
     cov = Coverage.from_pandas(coverage_data(), 'target', modulo=100)
     cov.set_all_successors()
 
     assert cov.successors[0] == 3
     assert cov.successors[5] == 1
-    assert cov.successors[1] == 3
+    assert cov.successors[1] == 4
 
-def test_coverage_fill():
+def test_merge_close_intervals():
     cov = Coverage(
-        Arc(arc_data(1, 10), 'target', 100),
-        Arc(arc_data(30, 50), 'target', 100),        
-        Arc(arc_data(53, 70), 'target', 100),
-        Arc(arc_data(94, 99), 'target', 100)
+        Arc(arc_data(2, 9), 'target', 100),
+        Arc(arc_data(3, 10), 'target', 100),
+        Arc(arc_data(1, 12), 'target', 100),        
     )
-    cov.fill_missing_data(max_merge_dist=3)
 
-    assert set(cov[1].bounds()) == {10, 30}
-    assert set(cov[4].bounds()) == {70, 94}
-    assert sum(sum(x.data.source=='NoCov') for x in cov) == 2
-    assert cov[2].end == 53
-    assert cov[5].end == 101
+    cov.merge_close_intervals(3)
+    assert set(cov[0].bounds()) == {1, 12}
+    assert set(cov[1].bounds()) == {2, 10}
+
+def test_coverage_fill_or_extend():
+    cov = Coverage(
+        Arc(arc_data(1, 10, 1, 'V2'), 'target', 100),
+        Arc(arc_data(30, 50, 1, 'V1'), 'target', 100),       
+        Arc(arc_data(53, 70, 1, 'V2'), 'target', 100),
+        Arc(arc_data(70, 80, 1, 'V2'), 'target', 100),
+        Arc(arc_data(72, 80, 2, ['V4', 'V2']), 'target', 100),
+        Arc(arc_data(83, 85, 1, 'V3'), 'target', 100),
+        Arc(arc_data(96, 99), 'target', 100),
+        Arc(arc_data(96, 98), 'target', 100),
+    )
+
+    print(cov)
+    cov.fill_or_extend(10)
+
+    assert set(cov[0].bounds()) == {1, 10}
+    assert set(cov[1].bounds()) == {11, 29}
+    assert sum(sum(x.data.index.str.startswith('NoCov')) for x in cov) == 2
+    assert set(cov[3].bounds()) == {53, 82}
+    assert set(cov[-1].bounds()) == {96, 100}
 
 def test_coverage_is_covered():
     cov = Coverage(
@@ -114,37 +125,11 @@ def test_coverage_is_covered():
 
     not_cov = cov.is_covered()
     
-    cov.fill_missing_data(3)
+    cov.fill_or_extend(20)
     
     assert not not_cov
     assert cov.is_covered()
 
-def test_merge_close_intervals():
-    cov = Coverage(
-        Arc(arc_data(2, 9), 'target', 100),
-        Arc(arc_data(3, 10), 'target', 100),
-        Arc(arc_data(1, 12), 'target', 100),        
-    )
-
-    cov.merge_close_intervals(3)
-    assert cov[1].end == 10    
-    assert cov[2].start == 2
-    assert set(cov[0].bounds()) == {1, 12}
-    
-def test_simplify():
-    cov = Coverage(
-        Arc(arc_data(1, 10), 'target', 100),
-        Arc(arc_data(3, 10), 'target', 100),
-        Arc(arc_data(3, 20), 'target', 100),        
-        Arc(arc_data(30, 90), 'target', 100),
-        Arc(arc_data(40, 70), 'target', 100),
-        Arc(arc_data(95, 9), 'target', 100),        
-        Arc(arc_data(99, 15), 'target', 100),
-    )
-
-    cov.simplify()
-    assert len(cov) == 4
-    
 def test_lee_and_lee_case_1():
     cov = Coverage(
         Arc(arc_data(0, 22), 'target', 100),
@@ -195,9 +180,10 @@ def test_lee_and_lee_case_3():
         Arc(arc_data(29, 55), 'target', 100),
         Arc(arc_data(54, 70), 'target', 100),
         Arc(arc_data(69, 5), 'target', 100),
-        Arc(arc_data(4, 28), 'target', 100),
+        Arc(arc_data(4, 27), 'target', 100),
         Arc(arc_data(27, 48), 'target', 100),
     )
+
     
     opt_cov = cov.get_minimal_coverage()
 
@@ -208,12 +194,10 @@ def test_lee_and_lee_case_3():
     
 if __name__ == '__main__':
 
-    # test_merge_close_intervals()
+    test_arc_intersect()
     # test_coverage_is_covered()
-    
     # test_coverage_from_pandas()
     # test_coverage_successor()
-    # test_coverage_fill()
-    test_simplify()
-    # test_coverage_insert()
+    # test_merge_close_intervals()
+    # test_coverage_fill_or_extend()
     # test_lee_and_lee_case_1()
