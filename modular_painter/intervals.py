@@ -1,16 +1,16 @@
-from itertools import groupby, compress
+from itertools import compress
 import sys
 import pandas as pd
 import numpy as np
 
-def get_sucessor(data, i, mod):
+def get_successor(data, i, mod):
     '''
     - Data must not include any duplicated intervals
     - The while interval must be covered
     '''
 
     offset = 0
-    end_i = data[i, 1]
+    end_i = data.end[i]
 
     not_found = True
     j = i
@@ -22,7 +22,7 @@ def get_sucessor(data, i, mod):
             j = 0
             offset = mod
             
-        if data[j, 0] + offset > end_i + 1:
+        if data.start[j] + offset > end_i + 1:
             return (j - 1) % len(data)
 
 
@@ -42,35 +42,36 @@ def compare_arc_pair(arc_prev, arc_next, max_extend_dist):
     if arc_prev.start == arc_next.start and arc_prev.end <= arc_next.end:
         return ('discard_prev', arc_next)
 
-    if close or overlap:
-        common = np.intersect1d(arc_prev.data.index, arc_next.data.index)
-        if common.size > 0:
-            merger_data = arc_prev.data.loc[common].reset_index()
-            # Set the end to the next end.
-            merger_data['end'] = arc_next.end
-            return ('merge_extend', Arc(merger_data, arc_prev.target, arc_prev.mod))
-
-        elif close and not overlap:
-            return ('extend', arc_next)
-        
+    if overlap:
         return ('do_nothing', arc_next)
-            
-    # The two arcs are too far away. We make up a fake arc
-    filler = pd.DataFrame([['NoCov', arc_prev.end+1, arc_next.start-1, 0]],
-                          columns=['source', 'start', 'end', 'identity'])
-    return ('fill', Arc(filler, arc_prev.target, arc_prev.mod))
+
+    if close:
+        return ('extend', arc_next)
+
+    # The gap is too big --> we fill it with a fake arc
+    filler = pd.DataFrame([['NoCov', 0]], columns=['source', 'identity'])
+
+    return ('fill', Arc(arc_prev.end+1, arc_next.start-1, arc_prev.mod, target=arc_prev.target, data=filler))
 
 class Arc:
 
-    def __init__(self, data, target, modulo):
+    def __init__(self, start, end, modulo, target=None, data=None):
         self.mod = modulo
         self.target = target
-        self.start = data.start[0]
-        self.end = data.end[0]
+        self.start = start
+        self.end = end
         self.fix_bounds()
 
-        self.data = data.set_index('source')
+        if data is not None:
+            self.data = data.set_index('source')
         self.marked = False # For lee and lee algorithm        
+
+    @classmethod
+    def from_pandas(cls, data, modulo, target=None):
+        '''
+        start/end as columns in data
+        '''
+        return cls(data.start[0], data.end[0], modulo, target=target, data=data.drop(['start', 'end'], axis=1))
         
     def __repr__(self):
         return "{}: ({}, {}), modulo={}".format(
@@ -82,6 +83,12 @@ class Arc:
 
     def __len__(self):
         return self.end - self.start + 1
+
+    def __getitem__(self, key):
+        if key in self.__dict__:
+            return getattr(self, key)
+        else:
+            return self.data[key]
 
     def set(self, **kwargs):
         for k, v in kwargs.items():
@@ -105,22 +112,25 @@ class Arc:
         if self.target != other.target or self.mod != other.mod:
             sys.exit("Cannot compare, different target {} vs {}".format(self.target, other.target))
 
-        # 3 cases: 1) easy, 2) self spans 0, 3) other spans 0
-        # |---|    
-        #        0
-        #           |-----|
-        start1, end1 = self.bounds()
-        start2, end2 = other.bounds()
         if self.end >= self.mod:
-            start1, end1 = (start1-self.mod, end1-self.mod)
-        if other.end >= other.mod:
-            start2, end2 = (start2-other.mod, end2-other.mod)
+            arc1_1 = Arc(self.start, self.mod-1, self.mod, self.target)
+            arc1_2 = Arc(0, self.end % self.mod, self.mod, self.target)
 
+            return arc1_1.intersect(other) or arc1_2.intersect(other)
+
+        if other.end >= self.mod:
+            arc2_1 = Arc(other.start, other.mod-1, other.mod, self.target)
+            arc2_2 = Arc(0, other.end % other.mod, other.mod, self.target)
+
+            return self.intersect(arc2_1) or self.intersect(arc2_2)
+
+        if self.start > other.start:
+            return other.intersect(self)
+
+        # we only compare arcs that do not cross 0 and where "self" starts before "other"
         return (
-            start1 - 1 <= start2 <= end1 + 1
-            or start1 - 1 <= end2 <= end1 + 1
-            or (end1 + 1) % self.mod == start2
-            or (end2 + 1) % self.mod == start1
+            self.start <= other.start <= self.end + 1
+            or (other.end + 1) % other.mod == self.start
         )
 
     def mark(self):
@@ -144,10 +154,9 @@ class Coverage:
         if modulo < 0:
             modulo = data[['start', 'end']].max().max()
             
-        # data.loc[data.tend < data.tstart, 'tend'] += modulo
         df = data.set_index(['start', 'end']).sort_index()
 
-        arcs = [Arc(df.loc[idx].reset_index(), target, modulo) for idx in df.index.unique()]
+        arcs = [Arc(*bounds, modulo, data=df.loc[bounds], target=target) for bounds in df.index.unique()]
 
         return cls(*arcs)
 
@@ -167,7 +176,7 @@ class Coverage:
 
     def __repr__(self):
 
-        locations = ['{:3} - {:>8.1%}{:>8.1%}: {}'.format(i, arc.start/self.mod, arc.end/self.mod, '/'.join(arc.data.index))
+        locations = ['{:3} - {:>9}{:>9}: {}'.format(i, arc.start, arc.end, '/'.join(arc.data.index))
                      for i, arc in enumerate(self.data)]
         message = "Target: {} (L={})\n{}".format(self.target, self.mod, '\n'.join(locations))
         return message
@@ -178,8 +187,10 @@ class Coverage:
             self.dirty = False
         return self.data[i]
 
-    def get_intervals(self):
-        return np.array([self[i].bounds() for i in range(len(self))])
+    def get(self, *keys):
+        values = [[arc[k] for k in keys] for arc in self.data]
+        
+        return pd.DataFrame(values, columns=keys)
 
     def is_covered(self):
         current_end = self[0].end
@@ -195,45 +206,55 @@ class Coverage:
         # Looping condition
         return self[-1].intersect(self[0])
 
-    def merge_close_intervals(self, arc_eq_diffs):
+    def extend_close_intervals(self, arc_eq_diffs):
         '''
-        Group intervals that have about the same boundaries 
+        "Sticky boundaries": extend start/end that are close to another interval
         '''
 
-        intervals = self.get_intervals()
-        dists = np.abs(intervals - np.roll(intervals, 1, axis=0)).sum(axis=1)
-        # is_far has an incrementing index that stay constant when dist <= arc_eq_diffs
-        is_far = np.cumsum(dists > arc_eq_diffs)
+        transf = {'start': min, 'end': max}
 
-        final_indices = np.ones(len(self)).astype(bool)
+        for key, func in transf.items():
+            feature = self.get(key)[key].sort_values()
 
-        for _, indices in groupby(range(len(self)), key=lambda i: is_far[i]):
-            indices = list(indices)
+            same_feature = (feature - np.roll(feature, 1) > arc_eq_diffs).cumsum().rename('group')
+            grouped = (same_feature.reset_index()
+                       .groupby('group').filter(lambda x: len(x)>1)
+                       .groupby('group')['index'].agg(list))
 
-            if len(indices) > 1:
-                start = intervals[indices, 0].min()
-                end = intervals[indices, 1].max()
+            for indices in grouped.values:
+                new = func(feature[indices])
+                for i in indices:
+                    setattr(self.data[i], key, new)
 
-                i0 = indices.pop()
-                self[i0].set(start=start, end=end, data=pd.concat([self[j].data for j in indices]))
+    def merge_equal_intervals(self):
+        '''
+        Group intervals that have the same boundaries 
+        '''
 
-                final_indices[indices] = False
+        intervals = self.get('start', 'end').reset_index()
+        
+        # is_far has an incrementing index that stay constant when both boundaries_dist <= arc_eq_diffs
+        grouped = intervals.groupby(['start', 'end'])['index'].agg(list)
+
+        final_indices = np.ones(len(intervals)).astype(bool)
+
+        for indices in grouped.values:
+            i0 = indices.pop()
+            self[i0].data = pd.concat([self[j].data for j in indices+[i0]])
+            # Remove all indices-i0
+            final_indices[indices] = False
 
         self.data = list(compress(self.data, final_indices))
-        
+
     def fill_or_extend(self, max_extend_dist):
         '''
-        ISSUE: because we delete arcs, we might still have consecutive arcs with the same label
-        FIX: 
-           1 - Loop to merge consecutive element
-           2 - Sort by (start, end) position --> groupby "start" key--> last element
         '''
         
-        i_max = 0
-        i = 1
+        (i_max, i) = (0, 0)
         to_discard = set()
 
         while True:
+            i += 1
             if i < len(self):
                 arc = self[i]
             else:
@@ -245,15 +266,9 @@ class Coverage:
             if outcome == 'discard_prev':
                 to_discard.add(i_max % len(self))
 
-            elif outcome in {'discard', 'merge_extend'}:
-                # 2 cases that require to delete the current arc:
-                # - merge_extend: 2 consecutive arcs with the same source --> group
-                # - discard: the arc is embedded in the previous
+            elif outcome == 'discard':
                 if i % len(self) != i_max:
                     to_discard.add(i % len(self))
-
-                if outcome == 'merge_extend':
-                    self.data[i_max] = new_arc
 
             elif outcome == 'extend':
                 # small gap between prev and current: we extend prev to current.start
@@ -267,8 +282,6 @@ class Coverage:
 
             if new_arc.end > self[i_max].end:
                 i_max = i
-                
-            i += 1
 
         if not self[0].intersect(self[i_max]):
             start0, end0 = self[0].bounds()
@@ -277,9 +290,8 @@ class Coverage:
             if (start0 + self.mod) - endf <= max_extend_dist:
                 self[i_max].end = self.mod + (start0 - 1)
             else:
-                filler = pd.DataFrame([['NoCov', endf+1, start0-1 % self.mod, 0]],
-                                      columns=['source', 'start', 'end', 'identity'])
-                self.data.append(Arc(filler, self.target, self.mod))
+                filler = pd.DataFrame([['NoCov', 0]], columns=['source', 'identity'])
+                self.data.append(Arc(endf+1, start0-1 % self.mod, self.mod, data=filler, target=self.target))
 
         self.data = [arc for (i, arc) in enumerate(self.data) if i not in to_discard]
 
@@ -288,8 +300,8 @@ class Coverage:
             import ipdb;ipdb.set_trace()
 
     def set_all_successors(self):
-        arc_boundaries = self.get_intervals()
-        self.successors = [get_sucessor(arc_boundaries, i, self.mod) for i in range(len(self))]
+        arc_boundaries = self.get('start', 'end')
+        self.successors = [get_successor(arc_boundaries, i, self.mod) for i in range(len(self))]
 
     def get_minimal_coverage(self):
         '''
@@ -327,6 +339,7 @@ class Coverage:
             t_[B_i] = i + 1
             i += 1
 
+
         # At this point we have an initial cover
         k = i
 
@@ -355,23 +368,40 @@ class Coverage:
         S = Coverage(*[S[i] for i in indices])
 
         return S
+
+    def circularize(self):
+        common_sources = np.intersect1d(self[0].data.index, self[-1].data.index)
+        if len(common_sources) > 0 and len(self) > 1:
+            self[-1].end = self.mod + self[0].end
+            self[-1].data = self[0].data.loc[common_sources]
+            self.data.pop(0)
         
     def get_junctions(self):
         '''
         Assumes perfect coverage
         '''
-        data = np.zeros(len(self), dtype=[('source1', '<U64'), ('source2', '<U64'),
-                                          ('start', 'uint32'), ('end', 'uint32')])
+
+        if len(self) == 1:
+            return pd.DataFrame([])
+        
+        data = np.zeros(len(self), dtype=[('parents', '<U128'),
+                                          ('start', 'uint32'),
+                                          ('end', 'uint32')])
         prev = self[len(self)-1]
         
         for i in range(len(self)):
             curr = self[i]
-            
-            data[i] = ('/'.join(prev.data.index),
-                       '/'.join(curr.data.index),
+
+            (p1, p2) = sorted(('/'.join(sorted(prev.data.index)),
+                               '/'.join(sorted(curr.data.index))))
+
+            data[i] = ("{} <-> {}".format(p1, p2),
                        curr.start,
-                       (prev.end + 1) % self.mod)
+                       (prev.end+1) % self.mod)
             prev = curr
 
-        return data
+        df = pd.DataFrame(data)
+        df['target'] = self.target
+        
+        return df
 

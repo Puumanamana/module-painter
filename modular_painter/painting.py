@@ -1,34 +1,30 @@
-from itertools import chain
 from Bio import SeqIO
 import pandas as pd
 
 from intervals import Coverage
-from modular_painter.display import donut_display
+from modular_painter.display import display_single_genome
     
 def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
     '''
     Paint all species groups in population
     '''
 
-    genome_lengths = dict(chain(*[
-        [(sequence.id, len(sequence.seq))
-         for sequence in SeqIO.parse(fasta, 'fasta')]
-        for fasta in fastas
-    ]))
+    genome_lengths = dict([(sequence.id, len(sequence.seq)) for fasta in fastas
+                           for sequence in SeqIO.parse(fasta, 'fasta')])
 
     result = {}
     for target in species:
+
         print('processing {}'.format(target))
         coverage_t = Coverage.from_pandas(species[target], target, genome_lengths[target])
-        coverage_t.merge_close_intervals(arc_eq_diffs)
+        coverage_t.extend_close_intervals(arc_eq_diffs)
+        coverage_t.merge_equal_intervals()
         coverage_t.fill_or_extend(min_module_size)
-        optimal_coverage = coverage_t.get_minimal_coverage()
-        result[target] = optimal_coverage
+        coverage_t.circularize()
 
-        print(optimal_coverage)
-        print(pd.DataFrame(optimal_coverage.get_junctions()).head(10))
+        result[target] = coverage_t.get_minimal_coverage()
 
-        donut_display(optimal_coverage, '/tmp/cedric/modular_painting_tests/painting_{}.html'
-                      .format(target), circular=False)
+        # display_single_genome(result[target], '/tmp/cedric/modular_painting_tests/painting_{}.html'
+        #                       .format(target), circular=False)
         
     return result

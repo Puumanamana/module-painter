@@ -20,7 +20,7 @@ def display_alignment(record, selected, output=None):
     ax.yaxis.grid(False, which='minor')
 
     for i, hit in enumerate(record.alignments):
-        hit_id = hit.hit_def.split(' ')[0]
+        hit_id = hit.hit_def.split()[0]
 
         ax.hlines(n_hits-i, 0, qlen, color='k', linewidth=.2)
 
@@ -42,10 +42,10 @@ def display_alignment(record, selected, output=None):
     # if output is not None:
     #     plt.savefig("{}/{}.pdf".format(output, record.query), transparent=True)
 
-def blast_sequences(query, db):
+def blast_sequences(query, db, cache=True):
     output = Path('/tmp/cedric/modular_painting_tests/{}_on_{}'.format(query.stem, db.stem))
     
-    if output.is_file():
+    if output.is_file() and cache:
         print('No need to do BLAST, found previous results.')
         return output
     
@@ -59,7 +59,7 @@ def blast_sequences(query, db):
     print(make_db)
     make_db()
     
-    blastn_on_db = NcbiblastnCommandline(query=str(query), db=db_path, out=blast_path, outfmt=5, gapopen=10, gapextend=5)
+    blastn_on_db = NcbiblastnCommandline(query=str(query), db=db_path, out=blast_path, outfmt=5, gapopen=5, gapextend=2)
     print(blastn_on_db)
     blastn_on_db()
 
@@ -93,7 +93,7 @@ def filter_blast_results(blast_file, output,
                     hit_id = hit.hit_def.split(' ')[0]
                     hsps = merge_contiguous_hsps(hit.hsps, record.query_length, min_module_size)
 
-                    entry = [[hit_id, hsp.query_start-1, hsp.query_end-1, hsp.identities]
+                    entry = [[hit_id, hsp.query_start, hsp.query_end, hsp.identities]
                              for hsp in hsps]
                     species[record_id] += entry
                     # species += entry
@@ -104,7 +104,6 @@ def filter_blast_results(blast_file, output,
         if (len(selected) > 10) and show:
             display_alignment(record, selected, output=output)
             plt.show()
-
     return species
 
 def merge_contiguous_hsps(hsps_in, query_len, min_module_size):
@@ -114,6 +113,9 @@ def merge_contiguous_hsps(hsps_in, query_len, min_module_size):
     to_keep = [True] * len(hsps)
 
     for i, hsp in enumerate(hsps[1:], 1):
+        hsp.query_start -= 1
+        hsp.query_end -= 1
+
         qmax = hsps[i_max].query_end
 
         if hsp.query_start <= qmax+1+min_module_size:
@@ -125,14 +127,6 @@ def merge_contiguous_hsps(hsps_in, query_len, min_module_size):
         else:
             i_max = i
 
-    # Looping condition
-    # i_min = next(i for i, keep in enumerate(to_keep) if keep)
-    # dist_to_start = query_len + hsps[i_min].query_start - hsps[i_max].query_end
-
-    # if i_max > i_min and dist_to_start <= 1+min_module_size:
-    #     hsps[i_max].query_end = query_len + hsps[0].query_end
-    #     hsps[i_max].identities += dist_to_start
-    #     to_keep[i_min] = False
     return compress(hsps, to_keep)
 
 def split_communities(query, db, output=None, show=False, **blast_filter_prms):

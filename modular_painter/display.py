@@ -20,9 +20,19 @@ def access(L, i):
         return None
     return L
 
-def donut_display(cov, output, title="", circular=True, **plot_kw):
+def display_single_genome(cov, output, title="", circular=True, **plot_kw):
 
     data = cov.to_pandas()
+
+    end_after_mod = data.end > cov.mod
+
+    if sum(end_after_mod) > 0:
+        data_wrapped = data.loc[end_after_mod].copy()
+
+        data_wrapped.start = 0
+        data.loc[end_after_mod, 'end'] = cov.mod
+
+        data = pd.concat([data_wrapped, data])
 
     # Set up different colors per source bacteriophage
     sources = data.source.unique()
