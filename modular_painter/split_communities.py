@@ -8,6 +8,8 @@ from Bio.Blast import NCBIXML
 
 import matplotlib.pyplot as plt
 
+from display import get_palette
+
 ## TO DO: only create database once for each sample
 
 def display_alignment(record, selected, output=None):
@@ -19,6 +21,7 @@ def display_alignment(record, selected, output=None):
     ax.xaxis.grid(True, which='both')
     ax.yaxis.grid(False, which='minor')
 
+    palette = get_palette(len(record.alignments))
     for i, hit in enumerate(record.alignments):
         hit_id = hit.hit_def.split()[0]
 
@@ -26,7 +29,8 @@ def display_alignment(record, selected, output=None):
 
         for hsp in hit.hsps:
             (start, end) = (hsp.query_start, hsp.query_end)
-            color = 'g' if hit_id in selected else 'r'
+            # color = 'g' if hit_id in selected else 'r'
+            color = palette[i]
             ax.hlines(n_hits-i, start, end, color=color, linewidth=4, label=hit_id)
 
     handles, labels = plt.gca().get_legend_handles_labels()
@@ -100,7 +104,7 @@ def filter_blast_results(blast_file, output,
                     selected.append(hit_id)
 
             species[record_id] = pd.DataFrame(species[record_id], columns=['source', 'start', 'end', 'identity'])
-                    
+
         if (len(selected) > 10) and show:
             display_alignment(record, selected, output=output)
             plt.show()

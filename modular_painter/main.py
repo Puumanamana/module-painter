@@ -21,8 +21,8 @@ def main():
                           arc_eq_diffs=args.arc_eq_diffs)
 
     handle_missing_data(args.fasta[0], paintings, min_id=0.8, min_cov=0.8, threads=1)
-    breakpoints= group_breakpoints(paintings, args.fasta[0],
-                                   min_len=10, min_id=0.8, min_cov=0.8, threads=1)
+    breakpoints = group_breakpoints(paintings, args.fasta[0],
+                                    min_len=10, min_id=0.8, min_cov=0.8, threads=1)
     cluster_breakpoints(breakpoints)
 
 if __name__ == '__main__':

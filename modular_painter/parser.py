@@ -12,7 +12,7 @@ def parse_args():
     parser.add_argument('--min-id', type=float, default=0.8, help='Minimum sequence identity for species definition')
     parser.add_argument('--min-cov', type=float, default=0.5, help='Minimum sequence coverage for species definition')
     parser.add_argument('--min-module-size', type=int, default=40, help='Maximum size of a module/HSP')
-    parser.add_argument('--arc-eq-diffs', type=int, default=20, help='Maximum distance between embedded modules to consider them identical.')
+    parser.add_argument('--arc-eq-diffs', type=int, default=100, help='Maximum distance between embedded modules to consider them identical.')
     parser.add_argument('--show', action='store_true', default=False)
 
     args = parser.parse_args()

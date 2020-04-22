@@ -1,8 +1,7 @@
 from Bio import SeqIO
-import pandas as pd
 
 from intervals import Coverage
-from modular_painter.display import display_single_genome
+from modular_painter.display import display_linear_genome
     
 def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
     '''
@@ -24,7 +23,8 @@ def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
 
         result[target] = coverage_t.get_minimal_coverage()
 
-        # display_single_genome(result[target], '/tmp/cedric/modular_painting_tests/painting_{}.html'
-        #                       .format(target), circular=False)
-        
+        display_linear_genome(result[target], '/tmp/cedric/modular_painting_tests/painting_{}.html'
+                              .format(target), circular=False)
+
+    import ipdb;ipdb.set_trace()
     return result

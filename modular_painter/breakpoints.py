@@ -1,3 +1,4 @@
+from itertools import product
 import numpy as np
 import pandas as pd
 
@@ -31,15 +32,16 @@ def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
                 arc.data.index = [nocovs.loc[name]] * len(arc.data)
 
 def get_punctual_bk(breaks, min_dist, min_len):
+
     bk_punct = (breaks[breaks.end-breaks.start <= min_len]
                 .reset_index()
-                .groupby('parents').agg({'start':np.sort, 'index':list}))
+                .groupby('parents').agg({'start': sorted, 'index': list}))
 
     components = np.zeros(len(breaks), dtype=int) - 1
     component_id = 0
-    for parents, (intervals, indices) in bk_punct.iterrows():            
+    for parents, (intervals, indices) in bk_punct.iterrows():
 
-        if np.isscalar(intervals):
+        if len(intervals) == 1:
             components[indices[0]] = component_id
             component_id += 1
             continue
@@ -53,7 +55,7 @@ def get_punctual_bk(breaks, min_dist, min_len):
     components = pd.Series(dict(enumerate(components)))
 
     return components
-                
+
 def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8, verbose=False, threads=1, min_dist=100):
 
     breaks = (pd.concat([painting.get_junctions() for painting in paintings.values()])
@@ -69,10 +71,32 @@ def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8, ver
 
     breaks['component'] = components
 
+    breaks.parents = [list(product(x.split('/'), y.split('/')))
+                      for (x,y) in breaks.parents.str.split(' <-> ')]
+
+    breaks = breaks.explode('parents')
+    breaks_grouped = breaks.groupby(['parents', 'component']).target
+
+    scores = (breaks_grouped
+              .agg(lambda x: '-'.join(x))
+              .reset_index()
+              .groupby(['parents', 'target']).component
+              .agg(components=list, prevalence=len))
+
+    scores['depth'] = pd.MultiIndex.get_level_values(scores.index, 'target').map(lambda x: 1+x.count('-'))
+
+    scores.sort_values(by=['depth', 'prevalence'], ascending=False, inplace=True)
+
+    # Then:
+    # 1. Select rows until completely covered
+    # 2. Resolve equalities for given target T between parents {(Xi, Yi)} with
+    #    a) most frequent pair
+    #    b) most frequent parent
+    #    c) least frequent parent
+    #    d) random choice
+    import ipdb;ipdb.set_trace()
     return breaks
 
 def cluster_breakpoints(breakpoints):
-    breakpoints = breakpoints.groupby(['parents', 'component']).agg(list)
-    breakpoints['length'] = breakpoints.start.map(len)
     import ipdb;ipdb.set_trace()
     return
