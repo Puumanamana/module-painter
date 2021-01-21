@@ -3,12 +3,12 @@ Modular painting for bacteriophages
 
 Citation (Work in progress)
 ---------------------------
-Arisdakessian C., Bergeron A., Poisson G.
-ModularPainting: fast assessment of modular recombinations in bacteriophages
+Arisdakessian C., Bergeron A., Belcaid M., Poisson G.
+ModularPainting: Identification of modular recombinations in bacteriophages
 
 Description
 -----------
-(Abstract) Within the rapid expansion ...
+(Abstract) 
 
 Usage
 -----
