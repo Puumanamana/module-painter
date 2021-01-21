@@ -17,11 +17,11 @@ def get_successor(data, i, mod):
 
     while not_found:
         j += 1
-        
+
         if j >= len(data):
             j = 0
             offset = mod
-            
+
         if data.start[j] + offset > end_i + 1:
             return (j - 1) % len(data)
 
@@ -64,7 +64,7 @@ class Arc:
 
         if data is not None:
             self.data = data.set_index('source')
-        self.marked = False # For lee and lee algorithm        
+        self.marked = False # For lee and lee algorithm
 
     @classmethod
     def from_pandas(cls, data, modulo, target=None):
@@ -72,7 +72,7 @@ class Arc:
         start/end as columns in data
         '''
         return cls(data.start[0], data.end[0], modulo, target=target, data=data.drop(['start', 'end'], axis=1))
-        
+
     def __repr__(self):
         return "{}: ({}, {}), modulo={}".format(
             '/'.join(self.data.index),
@@ -106,11 +106,11 @@ class Arc:
 
     def intersect(self, other):
         '''
-        - 2 arcs intersect if they have no gap inbetween
-        Thus, [0, 1] and [2,4] intersect since we work with discrete intervals
+        2 arcs intersect if they have no gap inbetween
+        Note: [0, 1] and [2,4] intersect since we work with discrete intervals
         '''
         if self.target != other.target or self.mod != other.mod:
-            sys.exit("Cannot compare, different target {} vs {}".format(self.target, other.target))
+            sys.exit("Cannot compare, different targets {} vs {}".format(self.target, other.target))
 
         if self.end >= self.mod:
             arc1_1 = Arc(self.start, self.mod-1, self.mod, self.target)
@@ -135,7 +135,7 @@ class Arc:
 
     def mark(self):
         self.marked = True
-    
+
 class Coverage:
 
     def __init__(self, *arcs):
@@ -153,7 +153,7 @@ class Coverage:
         '''
         if modulo < 0:
             modulo = data[['start', 'end']].max().max()
-            
+
         df = data.set_index(['start', 'end']).sort_index()
 
         arcs = [Arc(*bounds, modulo, data=df.loc[bounds], target=target) for bounds in df.index.unique()]
@@ -189,7 +189,7 @@ class Coverage:
 
     def get(self, *keys):
         values = [[arc[k] for k in keys] for arc in self.data]
-        
+
         return pd.DataFrame(values, columns=keys)
 
     def is_covered(self):
@@ -228,12 +228,13 @@ class Coverage:
 
     def merge_equal_intervals(self):
         '''
-        Group intervals that have the same boundaries 
+        Group intervals that have the same boundaries
         '''
 
         intervals = self.get('start', 'end').reset_index()
-        
-        # is_far has an incrementing index that stay constant when both boundaries_dist <= arc_eq_diffs
+
+        # is_far has an incrementing index that stay constant
+        # when both boundaries_dist <= arc_eq_diffs
         grouped = intervals.groupby(['start', 'end'])['index'].agg(list)
 
         final_indices = np.ones(len(intervals)).astype(bool)
@@ -249,7 +250,7 @@ class Coverage:
     def fill_or_extend(self, max_extend_dist):
         '''
         '''
-        
+
         (i_max, i) = (0, 0)
         to_discard = set()
 
@@ -286,7 +287,7 @@ class Coverage:
         if not self[0].intersect(self[i_max]):
             start0, end0 = self[0].bounds()
             startf, endf = self[i_max].bounds()
-    
+
             if (start0 + self.mod) - endf <= max_extend_dist:
                 self[i_max].end = self.mod + (start0 - 1)
             else:
@@ -375,7 +376,7 @@ class Coverage:
             self[-1].end = self.mod + self[0].end
             self[-1].data = self[0].data.loc[common_sources]
             self.data.pop(0)
-        
+
     def get_junctions(self):
         '''
         Assumes perfect coverage
@@ -383,12 +384,12 @@ class Coverage:
 
         if len(self) == 1:
             return pd.DataFrame([])
-        
+
         data = np.zeros(len(self), dtype=[('parents', '<U128'),
                                           ('start', 'uint32'),
                                           ('end', 'uint32')])
         prev = self[len(self)-1]
-        
+
         for i in range(len(self)):
             curr = self[i]
 
@@ -402,6 +403,5 @@ class Coverage:
 
         df = pd.DataFrame(data)
         df['target'] = self.target
-        
-        return df
 
+        return df
