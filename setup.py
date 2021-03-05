@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='modular_painter',
-      version='0.0',
+      version='0.0.0',
       description='Tool for bacteriophage painting',
       long_description=open('README.rst').read(),
       url='https://github.com/Puumanamana/modular_painting',
