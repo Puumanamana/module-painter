@@ -9,7 +9,7 @@ dependencies:
   - numpy
   - pandas >=1
   - blast >=2.10
-  - python-igraph
+  - python-igraph >=0.8.3
   - mappy
   - matplotlib
   - bokeh >=1.4

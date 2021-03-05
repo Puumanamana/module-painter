@@ -14,7 +14,7 @@ from Bio.Seq import Seq
 def subset_fasta(filename, subset_df, output=None, min_len=0):
 
     sequences = []
-    
+
     with open(filename, 'r') as handle:
         for (title, seq) in SimpleFastaParser(handle):
             v_id = title.split()[0]
@@ -37,7 +37,7 @@ def subset_fasta(filename, subset_df, output=None, min_len=0):
         # tmpdir = mkdtemp()
         tmpdir = "/tmp/cedric/modular_painting_tests"
         output = "{}/subset_{}".format(tmpdir, Path(filename).name)
-                
+
     SeqIO.write(sequences, output, 'fasta')
 
     return output
@@ -48,7 +48,7 @@ def get_minimap_graph(fasta, min_id=0.8, min_cov=0.5, verbose=0, threads=1):
     if not db: raise Exception("ERROR: failed to load/build index")
 
     (vertices, edges) = (set(), set())
-    
+
     for name, seq, _ in mappy.fastx_read(fasta):
         vertices.add(name)
         for hit in db.map(seq): # traverse alignments
@@ -73,5 +73,4 @@ def get_minimap_graph(fasta, min_id=0.8, min_cov=0.5, verbose=0, threads=1):
 
     components = dict((edges_array[edge], i) for (i, component) in enumerate(graph.components()) for edge in component)
 
-    return pd.Series(components)            
-    
+    return pd.Series(components)

@@ -21,7 +21,7 @@ def access(L, i):
         return None
     return L
 
-def get_palette(n):    
+def get_palette(n):
     palette = linear_palette(Turbo256, n)
     palette = np.random.choice(palette, n, replace=False).tolist()
 

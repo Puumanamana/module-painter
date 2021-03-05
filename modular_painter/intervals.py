@@ -192,6 +192,27 @@ class Coverage:
 
         return pd.DataFrame(values, columns=keys)
 
+    def change_parent(self, start, end, p1, p2):
+
+        bk = Arc(start, end, self.data[0].mod, target=self.data[0].target)
+
+        for (arc1, arc2) in zip(self.data, self.data[1:]+[self.data[0]]):
+            if arc1.intersect(bk):
+                if p1 in arc1.data.index and p2 in arc2.data.index:
+                    arc1.data = arc1.data.loc[[p1]]
+                    arc2.data = arc2.data.loc[[p2]]
+                    break
+                elif p2 in arc1.data.index and p1 in arc2.data.index:
+                    arc1.data = arc1.data.loc[[p2]]  
+                    arc2.data = arc2.data.loc[[p1]]
+                    break
+        else:
+            import ipdb;ipdb.set_trace()
+
+        if bk.target=='X':
+            print(start, end, p1, p2)
+            import ipdb;ipdb.set_trace()
+                
     def is_covered(self):
         current_end = self[0].end
 

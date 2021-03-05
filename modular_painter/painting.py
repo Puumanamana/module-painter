@@ -26,5 +26,4 @@ def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
         display_linear_genome(result[target], '/tmp/cedric/modular_painting_tests/painting_{}.html'
                               .format(target), circular=False)
 
-    import ipdb;ipdb.set_trace()
     return result

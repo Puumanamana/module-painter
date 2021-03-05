@@ -1,8 +1,144 @@
-from itertools import product
+from itertools import product, combinations
 import numpy as np
 import pandas as pd
+import igraph
 
 from util import subset_fasta, get_minimap_graph
+
+
+def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8,
+                      verbose=False, threads=1, min_dist=100):
+
+    # Find breakpoints in all genomes
+    breaks = (pd.concat([painting.get_junctions() for painting in paintings.values()])
+              .reset_index(drop=True).reset_index())
+    breaks['bin_id'] = -1
+
+    # Handle differently ponctual and interval break points
+    # ponctual case: based on common parents and position on genome
+    breaks_ponct = breaks[breaks.end-breaks.start <= min_len]
+    breaks.loc[breaks_ponct.index, 'bin_id'] = bin_punctual_bk(
+        breaks_ponct, min_dist, min_len
+    )
+    # interval case: based on sequence similarity and coverage
+    breaks_itv = breaks[breaks.end-breaks.start > min_len]
+    breaks_itv_grouped = breaks_itv.groupby('target').agg(list)
+    bk_fasta = subset_fasta(fasta, breaks_itv_grouped, min_len=min_len)
+    bins_itv = get_minimap_graph(bk_fasta, min_id=min_id, min_cov=min_cov,
+                                          verbose=0, threads=threads)
+    breaks.loc[bins_itv.index, 'bin_id'] = bins_itv + breaks.bin_id.max() + 1
+
+    # duplicate breakpoint for all possible combination of parent1/parent2
+    breaks.parents = [list(product(x.split('/'), y.split('/')))
+                      for (x,y) in breaks.parents.str.split(' <-> ')]
+    breaks = breaks.drop(columns='index').explode('parents')
+
+    # Remove combination with the same parent
+    breaks = breaks[breaks.parents.map(set).map(len) == 2]
+
+    return breaks
+
+
+def find_recombinations(bk):
+    return (
+        bk
+        .groupby(['parents', 'target']).bin_id
+        .agg(lambda x: len(x)//2)
+        .sum(level='parents')
+    )
+
+def select_parents_2(bk):
+
+    parent_stats = (
+        bk.groupby(['parents', 'target']).bin_id
+        .agg(bin_id=tuple, prevalence=len)
+    )
+    while True:
+        n_recomb = find_recombinations(bk)
+        best_pair = n_recomb.index[n_recomb==n_recomb.max()]
+
+        import ipdb;ipdb.set_trace()
+
+def select_parents(bk):
+
+    select_parents_2(bk)
+    # parent selection: use the parent pair with the highest prevalence
+    scores = (bk.groupby(['parents', 'bin_id']).target.agg(tuple)
+              .reset_index()
+              .groupby(['parents', 'target']).bin_id
+              .agg(bin_id=tuple, prevalence=len))
+
+    scores['depth'] = (scores.index
+                       .get_level_values('target')
+                       .map(lambda x: 1+len(x)))
+
+    scores['known'] = (2-scores.index
+                       .get_level_values('parents')
+                       .map(lambda x: ''.join(x).count('NoCov')))
+
+    scores.sort_values(by=['depth', 'prevalence', 'known'], ascending=False, inplace=True)
+
+    rc = find_recombinations(bk).sort_values(ascending=False)
+    import ipdb;ipdb.set_trace()
+    # Make a parent pair choice for all breakpoints
+    choice = (scores.reset_index().explode('bin_id').explode('target')
+              .groupby(['bin_id', 'target'], as_index=False).parents.first()
+              .drop_duplicates()
+              .set_index(['bin_id', 'target']))
+
+    bk.parents = choice.reindex(index=list(zip(bk.bin_id, bk.target))).to_numpy()
+
+    return bk.drop_duplicates()
+
+def cluster_breakpoints(bk):
+    graph = igraph.Graph()
+    graph.add_vertices(bk.target.unique())
+
+    bk_groups = bk.groupby('bin_id').agg(list)
+
+    for group, data in bk_groups.iterrows():
+        for (t1, t2) in combinations(data.target, 2):
+            graph.add_edge(t1, t2, parent=data.parents[0])
+
+    communities = graph.community_leiden(
+        objective_function="CPM",
+        resolution_parameter=0.5,
+        n_iterations=-1)
+
+    vertices = np.array(graph.vs['name'])
+    communities = [vertices[idx] for idx in communities]
+
+    return communities
+
+
+def bin_punctual_bk(breaks, min_dist, min_len):
+    """
+    Find groups of breakpoints with the same parents such that
+    the distance between 2 successive breakpoints is smaller than min_dist bp
+
+    Returns bin assignment of each breakpoints
+    """
+
+    bk_punct = breaks.groupby('parents').agg(dict(start=sorted, index=list))
+
+    bin_assignment = pd.Series(-1, index=breaks.index)
+    bin_id = 0
+    for _, (starts, indices) in bk_punct.iterrows():
+
+        if len(starts) == 1:
+            bin_assignment[indices[0]] = bin_id
+            bin_id += 1
+            continue
+
+        # Increment bin_id if the distance between 2 successive breakpoints
+        # is greater than min_dist bp
+        bin_assignment[indices] = bin_id
+        bin_assignment[indices[1:]] += np.cumsum(np.diff(starts) > min_dist)
+
+        bin_id = bin_assignment[indices[-1]] + 1
+
+    return bin_assignment
+
 
 def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
     """
@@ -20,83 +156,14 @@ def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
     # Save to fasta for minimap alignment
     nocov_fasta = subset_fasta(genomes, nocovs_groups)
 
-    # Build graph and extract connected components
-    components = get_minimap_graph(nocov_fasta, min_id=min_id, min_cov=min_cov, verbose=0, threads=threads)
-    nocovs['components'] = components.astype(str).str.replace('^(\d)', r'NoCov-\1').sort_index()
-    nocovs = nocovs.set_index(['target', 'start', 'end']).components
+    # Build graph and extract connected bin_ids
+    bin_ids = get_minimap_graph(nocov_fasta, min_id=min_id, min_cov=min_cov,
+                                verbose=0, threads=threads)
+    nocovs['bin_id'] = bin_ids.astype(str).str.replace(r'^(\d)', r'NoCov-\1', regex=True).sort_index()
+    nocovs = nocovs.set_index(['target', 'start', 'end']).bin_id
 
     for target, painting in paintings.items():
         for arc in painting.data:
             name = (target, arc.start, arc.end)
             if name in nocovs.index:
                 arc.data.index = [nocovs.loc[name]] * len(arc.data)
-
-def get_punctual_bk(breaks, min_dist, min_len):
-
-    bk_punct = (breaks[breaks.end-breaks.start <= min_len]
-                .reset_index()
-                .groupby('parents').agg({'start': sorted, 'index': list}))
-
-    components = np.zeros(len(breaks), dtype=int) - 1
-    component_id = 0
-    for parents, (intervals, indices) in bk_punct.iterrows():
-
-        if len(intervals) == 1:
-            components[indices[0]] = component_id
-            component_id += 1
-            continue
-
-        groups = np.cumsum(np.diff(intervals) > min_dist)
-        components[indices[0]] = component_id
-        components[indices[1:]] = component_id + groups
-
-        component_id = groups[-1] + component_id + 1
-
-    components = pd.Series(dict(enumerate(components)))
-
-    return components
-
-def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8, verbose=False, threads=1, min_dist=100):
-
-    breaks = (pd.concat([painting.get_junctions() for painting in paintings.values()])
-              .reset_index(drop=True))
-
-    components = get_punctual_bk(breaks, min_dist, min_len)
-
-    breaks_grouped = breaks.reset_index().groupby(['target'])[["index", "start", "end"]].agg(list)
-    
-    bk_fasta = subset_fasta(fasta, breaks_grouped, min_len=min_len) 
-    components_interv = get_minimap_graph(bk_fasta, min_id=min_id, min_cov=min_cov, verbose=0, threads=threads)
-    components.loc[components_interv.index] = components_interv + components.max() + 1
-
-    breaks['component'] = components
-
-    breaks.parents = [list(product(x.split('/'), y.split('/')))
-                      for (x,y) in breaks.parents.str.split(' <-> ')]
-
-    breaks = breaks.explode('parents')
-    breaks_grouped = breaks.groupby(['parents', 'component']).target
-
-    scores = (breaks_grouped
-              .agg(lambda x: '-'.join(x))
-              .reset_index()
-              .groupby(['parents', 'target']).component
-              .agg(components=list, prevalence=len))
-
-    scores['depth'] = pd.MultiIndex.get_level_values(scores.index, 'target').map(lambda x: 1+x.count('-'))
-
-    scores.sort_values(by=['depth', 'prevalence'], ascending=False, inplace=True)
-
-    # Then:
-    # 1. Select rows until completely covered
-    # 2. Resolve equalities for given target T between parents {(Xi, Yi)} with
-    #    a) most frequent pair
-    #    b) most frequent parent
-    #    c) least frequent parent
-    #    d) random choice
-    import ipdb;ipdb.set_trace()
-    return breaks
-
-def cluster_breakpoints(breakpoints):
-    import ipdb;ipdb.set_trace()
-    return
