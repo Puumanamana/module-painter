@@ -4,10 +4,10 @@ from modular_painter.painting import paint_all
 from modular_painter.breakpoints import (
     handle_missing_data,
     group_breakpoints,
-    select_parents,
+    select_parents_by_sparsity,
     cluster_breakpoints
     )
-from modular_painter.display import display_linear_genome
+from modular_painter.display import display_genomes
 
 def main():
 
@@ -26,19 +26,26 @@ def main():
 
     handle_missing_data(args.fasta[0], paintings, min_id=0.8,
                         min_cov=0.8, threads=1)
+
     breakpoints = group_breakpoints(paintings, args.fasta[0],
                                     min_len=10, min_id=0.8, min_cov=0.8,
                                     threads=1)
-    bk_unique = select_parents(breakpoints)
+    bk_unique = select_parents_by_sparsity(breakpoints)
 
     # For display, make parents unique in coverage
-    for (parents, start, end, target, _) in bk_unique.to_numpy():
-        paintings[target].change_parent(start, end, *parents)
+    for (target, i1, i2, parents, _, _, _) in bk_unique.to_numpy():
+        (l, r) = (paintings[target].data[i1], paintings[target].data[i2])
 
+        if not parents[0] in l.data.index:
+            (l, r) = (r, l)
+
+        l.data = l.data.loc[[parents[0]]]
+        r.data = r.data.loc[[parents[1]]]
+
+    print(*list(paintings.values()))
+    display_genomes(paintings)
+    import ipdb;ipdb.set_trace()
     clusters = cluster_breakpoints(bk_unique)
-
-    for cluster in clusters:
-        display_linear_genome([painting[c] for c in cluster])
 
 if __name__ == '__main__':
     main()

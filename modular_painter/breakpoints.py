@@ -1,4 +1,6 @@
 from itertools import product, combinations
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 import igraph
@@ -34,61 +36,110 @@ def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8,
     breaks = breaks.drop(columns='index').explode('parents')
 
     # Remove combination with the same parent
-    breaks = breaks[breaks.parents.map(set).map(len) == 2]
+    breaks = breaks[breaks.parents.map(set).map(len) == 2].reset_index(drop=True)
 
     return breaks
 
-
-def find_recombinations(bk):
-    return (
+def count_recombinations(bk):
+    rc = (
         bk
-        .groupby(['parents', 'target']).bin_id
+        .groupby(['par_set', 'target']).bin_id
         .agg(lambda x: len(x)//2)
-        .sum(level='parents')
+        .sum(level='par_set')
     )
 
-def select_parents_2(bk):
+    return rc
 
-    parent_stats = (
-        bk.groupby(['parents', 'target']).bin_id
-        .agg(bin_id=tuple, prevalence=len)
-    )
-    while True:
-        n_recomb = find_recombinations(bk)
-        best_pair = n_recomb.index[n_recomb==n_recomb.max()]
+def remove_alt_parents(bk, choice):
+    bin_ids = set(bk.loc[bk.par_set == choice, 'bin_id'])
+    bk = (bk.set_index(['target', 'i1', 'i2']).sort_index()
+          .assign(idt=np.arange(bk.shape[0])))
 
-        import ipdb;ipdb.set_trace()
+    to_rm = []
 
-def select_parents(bk):
+    for (keys, e) in bk.iterrows():
+        (target, i1, i2) = keys
 
-    select_parents_2(bk)
-    # parent selection: use the parent pair with the highest prevalence
-    scores = (bk.groupby(['parents', 'bin_id']).target.agg(tuple)
-              .reset_index()
-              .groupby(['parents', 'target']).bin_id
-              .agg(bin_id=tuple, prevalence=len))
+        if (
+                e.par_set == choice # this is a correct entry
+                or e.bin_id not in bin_ids # the bin_id is not affected by the change
+                # this target does not have `choice` as a parent for this `bin_id`
+                or all(bk[bk.bin_id == e.bin_id].loc[target, 'par_set'] != choice)
+        ):
+            continue
 
-    scores['depth'] = (scores.index
-                       .get_level_values('target')
-                       .map(lambda x: 1+len(x)))
+        # parents in the correct order
+        ref = bk[(bk.bin_id == e.bin_id) & (bk.par_set == choice)].parents[0]
+        
+        to_rm.append(e.idt)
 
-    scores['known'] = (2-scores.index
-                       .get_level_values('parents')
-                       .map(lambda x: ''.join(x).count('NoCov')))
+        n_itv = bk.loc[target].index.get_level_values(level=1).max()
+        # fix the previous interval
+        if i1 > 0:
+            prev_i = (target, i1-1, i1)
+        else:
+            prev_i = (target, n_itv, i1)
 
-    scores.sort_values(by=['depth', 'prevalence', 'known'], ascending=False, inplace=True)
+        prev_to_rm = bk.loc[prev_i, 'idt'][
+            bk.loc[prev_i, 'parents'].str[1] != ref[0]
+        ].tolist()
+        to_rm += prev_to_rm
+            
+        # fix the next interval
+        if i2 < n_itv:
+            next_i = (target, i2, i2+1)
+        else:
+            next_i = (target, i2, 0)
 
-    rc = find_recombinations(bk).sort_values(ascending=False)
-    import ipdb;ipdb.set_trace()
-    # Make a parent pair choice for all breakpoints
-    choice = (scores.reset_index().explode('bin_id').explode('target')
-              .groupby(['bin_id', 'target'], as_index=False).parents.first()
-              .drop_duplicates()
-              .set_index(['bin_id', 'target']))
+        next_to_rm = bk.loc[next_i, 'idt'][
+            bk.loc[next_i, 'parents'].str[0] != ref[1]
+        ].tolist()
+        to_rm += next_to_rm
 
-    bk.parents = choice.reindex(index=list(zip(bk.bin_id, bk.target))).to_numpy()
+    bk = bk.reset_index().set_index('idt').drop(to_rm)
 
-    return bk.drop_duplicates()
+    return bk
+
+def select_parents_by_sparsity(bk):
+    """
+    Minimize number of different parent pairs
+    """
+
+    ## WARNING: choice of breakpoints affects the next: A B/C A: if I choose AB then I choose BA after + careful order of breakpoints
+    multicov = True
+    selected = {}
+    # Sorted list of parents, so that we count (A,B) + (A,B) the same way as (A,B) + (B, A)
+    bk['par_set'] = bk.parents.apply(lambda x: tuple(sorted(x)))
+
+    while multicov > 0:
+        # Get parents with the most recombinations
+        rc = count_recombinations(bk[~bk.par_set.isin(selected)])
+        rc_max = rc.max()
+        parent_pairs = rc.index[rc==rc_max]
+
+        # Solve equalities by selecting the parents that cover the most phages overall
+        p_max = parent_pairs[0] # parent pair with the max freq
+        s_max = 0 # score of the best parent
+
+        if len(parent_pairs) > 1:
+            parent_freq = Counter([p for pair in bk.parents for p in pair])
+
+            for (p1, p2) in parent_pairs:
+                score = ( # penalty on NoCov
+                    parent_freq[p1] + ('NoCov' in p1) * -100 +
+                    parent_freq[p2] + ('NoCov' in p2) * -100
+                )
+                if score > s_max:
+                    s_max = score
+                    p_max = (p1, p2)
+
+        bk = remove_alt_parents(bk, p_max)
+
+        multicov = bk[['bin_id', 'target']].duplicated().sum()
+
+        selected[p_max] = rc_max
+
+    return bk.drop(columns='par_set')
 
 def cluster_breakpoints(bk):
     graph = igraph.Graph()
@@ -166,4 +217,5 @@ def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
         for arc in painting.data:
             name = (target, arc.start, arc.end)
             if name in nocovs.index:
-                arc.data.index = [nocovs.loc[name]] * len(arc.data)
+                arc.data.rename({'NoCov': nocovs.loc[name]}, inplace=True)
+                # arc.data.index = pd.Index([nocovs.loc[name]] * len(arc.data), name='source')

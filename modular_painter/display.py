@@ -2,17 +2,14 @@ from math import pi
 import numpy as np
 import pandas as pd
 
-from bokeh.io import output_file, save
-from bokeh.plotting import figure
-from bokeh.transform import cumsum
-from bokeh.palettes import Turbo256, linear_palette
-from bokeh.models import Legend
+import numpy as np
+from bokeh.models import HoverTool
 
-TOOLS = "box_zoom,reset,hover"
-TOOLTIPS = [("source", "@source"),
-            ("identity", "@identity{0.00%}"),
-            ("interval", "@start-@end"),
-            ("position", "$x{0,0}")]
+import holoviews as hv
+from holoviews import dim
+import colorcet as cc
+hv.extension('bokeh')
+
 
 def access(L, i):
     if isinstance(L, list):
@@ -27,149 +24,55 @@ def get_palette(n):
 
     return palette
 
-def display_genomes(df, genomes):
-    return
+def normalize(x, start, end):
+    return 100 * (x-start)/(end-start)
 
-def display_linear_genome(cov, output, title="", **plot_kw):
-    data = cov.to_pandas()
+def display_genomes(genomes):
+    data = pd.concat({
+        name: genome.to_pandas()
+        for (name, genome) in genomes.items()
+    }).reset_index(level=1, drop=True).rename_axis(index='target').reset_index()
 
-    end_after_mod = data.end > cov.mod
-
-    if sum(end_after_mod) > 0:
-        data_wrapped = data.loc[end_after_mod].copy()
-        data_wrapped.start = 0
-        data_wrapped.end = data_wrapped.end % cov.mod
-
-        data.loc[end_after_mod, 'end'] = cov.mod
-
-        data = pd.concat([data_wrapped, data])
-
-    # Set up different colors per source bacteriophage
-    sources = data.source.unique()
-    data.identity /= data.end - data.start
-    data = data.groupby(['start', 'end'], as_index=False).agg(list)
-
-    palette = pd.Series(dict(zip(sources, get_palette(len(sources)))))
-
-    # Number of levels for painting
-    # (when multiple bacteriophages align on the same fragment)
-    max_depth = data.source.apply(len).max()
-
-    # Additional columns for plotting
-    data['mid'] = (data.start + data.end) / 2
-    data['fs'] = data.end - data.start
-    data['color'] = data.source.apply(lambda x: palette.loc[x].tolist())
-
-    # Adjust figure limits when plotting linear fragments
-    layer_height = 2
-
-    plot_kw = {
-        'min_border': 200,
-        'plot_width': 1200, 'plot_height': 800,
-        'y_range': (-layer_height*10, 5*max_depth*layer_height)
-    }
-
-    p = figure(title=title, tools=TOOLS, tooltips=TOOLTIPS, **plot_kw)
-
-    # Plot one layer at a time
-    for depth in range(max_depth):
-        # data_i is the i^th layer
-        data_i = data.applymap(lambda x: access(x, depth))
-        data_i.fillna('None', inplace=True)
-        data_i.loc[data_i.source == 'NoCov', 'alpha'] = 0
-
-        # Hide the uncovered sections
-        data_i['alpha'] = (data_i.source != 'None').astype(int) * 0.6
-
-        p.rect(x='mid', y=(max_depth - depth)*3, source=data_i,
-               width='fs', height=layer_height,
-               fill_color='color', fill_alpha='alpha',
-               line_alpha='alpha', line_width=1, line_color='black',
-               legend_group='source')
-
-    leg_items = {}
-
-    for item in p.legend.items:
-        label = item.label['value']
-        if label not in leg_items and label not in {'NoCov', 'None'}:
-            leg_items[label] = item
-            
-    p.legend.items.clear()
-
-    legend = Legend(items=list(leg_items.values()), glyph_height=20, location=(20, 0))
-    p.add_layout(legend, 'right')
-
-    p.legend.label_text_font_size = '10pt'
-    p.ygrid.visible = False
-    p.yaxis.visible = False
-    output_file(output)
-    save(p)
+    starts = data.groupby('target').start.min()
+    ends = data.groupby('target').end.max()
     
+    data.start = data.groupby('target').start.transform(lambda x: normalize(x, starts[x.name], ends[x.name]))
+    data.end = data.groupby('target').end.transform(lambda x: normalize(x, starts[x.name], ends[x.name]))
 
-def display_circular_genome(cov, output, title="", **plot_kw):
-    data = cov.to_pandas()
+    hover = HoverTool(tooltips=[('Parent', '@source')])
+    
+    # seg = hv.Segments(data, ['start', 'target', 'end', 'target'])
+    # seg.opts(color='source', line_width=30, width=800, height=800, cmap='tab10',
+    #          xlabel='Position', ylabel='Phage', legend_limit=50,
+    #          tools=[hover])
 
-    end_after_mod = data.end > cov.mod
+    legend_opts = dict(
+        # label_text_font_size="12px",
+        # label_text_line_height=20, # doesnt seem to be doing anything
+        # spacing=0,
+        glyph_height=15,
+        label_height=15,
+     )
 
-    if sum(end_after_mod) > 0:
-        data_wrapped = data.loc[end_after_mod].copy()
-        data_wrapped.start = 0
-        data_wrapped.end = data_wrapped.end % cov.mod
+    plot_opts = dict(
+        width=1000, height=60*data.target.nunique(),
+        xlabel='Position', ylabel='Phage',
+        legend_position="right",
+        legend_limit=50,
+        legend_offset=(30, 0),
+        legend_opts=legend_opts
+    )
 
-        data.loc[end_after_mod, 'end'] = cov.mod
+    parents = sorted([x for x in data.source.unique() if 'NoCov' not in x])
+    parents_nocov = sorted([x for x in data.source.unique() if 'NoCov' in x], key=lambda x: int(x.split('-')[-1]))
 
-        data = pd.concat([data_wrapped, data])
+    cmap_parents = cc.glasbey_light[:len(parents)]
+    cmap_parents_nocov = cc.gray[0:len(cc.gray):(len(cc.gray)//len(parents_nocov))]
+    
+    seg = hv.Overlay([
+        hv.Segments(data[data.source==s], ['start', 'target', 'end', 'target'], label=s)
+        .opts(line_width=30, color=c, tools=[hover])
+        for s, c in zip(parents + parents_nocov, cmap_parents + cmap_parents_nocov)
+    ]).opts(**plot_opts)
 
-    # Set up different colors per source bacteriophage
-    sources = data.source.unique()
-    data.identity /= data.end - data.start
-    data = data.groupby(['start', 'end'], as_index=False).agg(list)
-
-    palette = pd.Series(dict(zip(sources, get_palette(len(sources)))))
-
-    # Number of levels for painting
-    # (when multiple bacteriophages align on the same fragment)
-    max_depth = data.source.apply(len).max()
-
-    # Additional columns for plotting
-    data['mid'] = (data.start + data.end) / 2
-    data['fs'] = data.end - data.start
-    data['angle'] = data.fs / data.fs.sum() * 2*pi
-    data['color'] = data.source.apply(lambda x: palette.loc[x].tolist())
-
-    p = figure(title=title, tools=TOOLS, tooltips=TOOLTIPS, **plot_kw)
-
-    # Plot one layer at a time
-    for depth in range(max_depth):
-        # data_i is the i^th layer
-        data_i = data.applymap(lambda x: access(x, depth))
-        data_i.fillna('None', inplace=True)
-        data_i.loc[data_i.source == 'NoCov', 'alpha'] = 0
-
-        # Hide the uncovered sections
-        data_i['alpha'] = (data_i.source != 'None').astype(int) * 0.6
-
-        outer_r = (max_depth - depth)*0.2
-        inner_r = (max_depth - depth - 1)*0.2
-
-        p.annular_wedge(source=data_i, x=0, y=1, inner_radius=inner_r, outer_radius=outer_r,
-                        start_angle=cumsum('angle', include_zero=True), end_angle=cumsum('angle'),
-                        line_color="white", fill_color='color', legend_group='source')
-
-    leg_items = {}
-
-    for item in p.legend.items:
-        label = item.label['value']
-        if label not in leg_items and label not in {'NoCov', 'None'}:
-            leg_items[label] = item
-            
-    p.legend.items.clear()
-
-    legend = Legend(items=list(leg_items.values()), glyph_height=20, location=(20, 0))
-    p.add_layout(legend, 'right')
-
-    p.legend.label_text_font_size = '10pt'
-    p.ygrid.visible = False
-    p.yaxis.visible = False
-    output_file(output)
-    save(p)
+    hv.save(seg, '/tmp/cedric/modular_painting_tests/paintings.html')

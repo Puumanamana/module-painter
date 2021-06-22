@@ -6,7 +6,7 @@ import numpy as np
 def get_successor(data, i, mod):
     '''
     - Data must not include any duplicated intervals
-    - The while interval must be covered
+    - The whole interval must be covered
     '''
 
     offset = 0
@@ -178,7 +178,7 @@ class Coverage:
 
         locations = ['{:3} - {:>9}{:>9}: {}'.format(i, arc.start, arc.end, '/'.join(arc.data.index))
                      for i, arc in enumerate(self.data)]
-        message = "Target: {} (L={})\n{}".format(self.target, self.mod, '\n'.join(locations))
+        message = "Target: {} (L={})\n{}\n".format(self.target, self.mod, '\n'.join(locations))
         return message
 
     def __getitem__(self, i):
@@ -192,27 +192,6 @@ class Coverage:
 
         return pd.DataFrame(values, columns=keys)
 
-    def change_parent(self, start, end, p1, p2):
-
-        bk = Arc(start, end, self.data[0].mod, target=self.data[0].target)
-
-        for (arc1, arc2) in zip(self.data, self.data[1:]+[self.data[0]]):
-            if arc1.intersect(bk):
-                if p1 in arc1.data.index and p2 in arc2.data.index:
-                    arc1.data = arc1.data.loc[[p1]]
-                    arc2.data = arc2.data.loc[[p2]]
-                    break
-                elif p2 in arc1.data.index and p1 in arc2.data.index:
-                    arc1.data = arc1.data.loc[[p2]]  
-                    arc2.data = arc2.data.loc[[p1]]
-                    break
-        else:
-            import ipdb;ipdb.set_trace()
-
-        if bk.target=='X':
-            print(start, end, p1, p2)
-            import ipdb;ipdb.set_trace()
-                
     def is_covered(self):
         current_end = self[0].end
 
@@ -406,20 +385,32 @@ class Coverage:
         if len(self) == 1:
             return pd.DataFrame([])
 
-        data = np.zeros(len(self), dtype=[('parents', '<U128'),
-                                          ('start', 'uint32'),
-                                          ('end', 'uint32')])
-        prev = self[len(self)-1]
+        data = np.zeros(len(self), dtype=[
+            ('parents', '<U128'),
+            # ('parents_set', '<U128'),
+            ('start', 'uint32'),
+            ('end', 'uint32'),
+            ('i1', 'uint32'),
+            ('i2', 'uint32')
+        ])
+        prev_i = len(self) - 1
+        prev = self[prev_i]
 
         for i in range(len(self)):
             curr = self[i]
 
-            (p1, p2) = sorted(('/'.join(sorted(prev.data.index)),
-                               '/'.join(sorted(curr.data.index))))
+            (p1, p2) = ('/'.join(sorted(prev.data.index)),
+                        '/'.join(sorted(curr.data.index)))
 
-            data[i] = ("{} <-> {}".format(p1, p2),
-                       curr.start,
-                       (prev.end+1) % self.mod)
+            data[i] = (
+                "{} <-> {}".format(p1, p2),
+                # "{} <-> {}".format(*sorted([p1, p2])),
+                curr.start,
+                (prev.end+1) % self.mod,
+                prev_i,
+                i
+            )
+            prev_i = i
             prev = curr
 
         df = pd.DataFrame(data)

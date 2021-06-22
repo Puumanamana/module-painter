@@ -1,7 +1,6 @@
 from Bio import SeqIO
 
 from intervals import Coverage
-from modular_painter.display import display_linear_genome
     
 def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
     '''
@@ -13,7 +12,6 @@ def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
 
     result = {}
     for target in species:
-
         print('processing {}'.format(target))
         coverage_t = Coverage.from_pandas(species[target], target, genome_lengths[target])
         coverage_t.extend_close_intervals(arc_eq_diffs)
@@ -23,7 +21,7 @@ def paint_all(fastas, species, arc_eq_diffs=None, min_module_size=None):
 
         result[target] = coverage_t.get_minimal_coverage()
 
-        display_linear_genome(result[target], '/tmp/cedric/modular_painting_tests/painting_{}.html'
-                              .format(target), circular=False)
+        # display_linear_genome(result[target], '/tmp/cedric/modular_painting_tests/painting_{}.html'
+        #                       .format(target), circular=False)
 
     return result
