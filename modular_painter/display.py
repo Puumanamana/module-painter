@@ -4,6 +4,7 @@ import pandas as pd
 
 import numpy as np
 from bokeh.models import HoverTool
+from bokeh.palettes import Turbo256, linear_palette
 
 import holoviews as hv
 from holoviews import dim
@@ -27,25 +28,36 @@ def get_palette(n):
 def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
-def display_genomes(genomes):
+def display_genomes(genomes, clusters=None, norm=True):
     data = pd.concat({
         name: genome.to_pandas()
         for (name, genome) in genomes.items()
     }).reset_index(level=1, drop=True).rename_axis(index='target').reset_index()
-
-    starts = data.groupby('target').start.min()
-    ends = data.groupby('target').end.max()
     
-    data.start = data.groupby('target').start.transform(lambda x: normalize(x, starts[x.name], ends[x.name]))
-    data.end = data.groupby('target').end.transform(lambda x: normalize(x, starts[x.name], ends[x.name]))
+    if norm:
+        to_add = []
 
-    hover = HoverTool(tooltips=[('Parent', '@source')])
+        for target in data.target.unique():
+            data_t = data[data.target == target]
+            first_idx = data_t.index[0]
+            extra = abs(data.loc[first_idx, 'start'] - 1)
+            # extra = data.loc[last_idx, 'end'] - genomes[target].mod
+
+            if extra > 0:
+                data.loc[first_idx, 'start'] = 1
+                to_add += [(data_t.loc[first_idx, 'target'],
+                            data_t.loc[first_idx, 'parent'],
+                            genomes[target].mod-extra+1,
+                            genomes[target].mod)]
+
+        first_idx = data.index.max() + 1
+        for i, entry in enumerate(to_add):
+            data.loc[i+first_idx] = entry
+                
+        data = data.sort_values(by=['target', 'start', 'end']).reset_index(drop=True)
+            
+    hover = HoverTool(tooltips=[('Parent', '@parent')])
     
-    # seg = hv.Segments(data, ['start', 'target', 'end', 'target'])
-    # seg.opts(color='source', line_width=30, width=800, height=800, cmap='tab10',
-    #          xlabel='Position', ylabel='Phage', legend_limit=50,
-    #          tools=[hover])
-
     legend_opts = dict(
         # label_text_font_size="12px",
         # label_text_line_height=20, # doesnt seem to be doing anything
@@ -55,24 +67,60 @@ def display_genomes(genomes):
      )
 
     plot_opts = dict(
-        width=1000, height=60*data.target.nunique(),
+        width=700, height=40*data.target.nunique(),
         xlabel='Position', ylabel='Phage',
         legend_position="right",
         legend_limit=50,
         legend_offset=(30, 0),
-        legend_opts=legend_opts
+        legend_opts=legend_opts,
     )
 
-    parents = sorted([x for x in data.source.unique() if 'NoCov' not in x])
-    parents_nocov = sorted([x for x in data.source.unique() if 'NoCov' in x], key=lambda x: int(x.split('-')[-1]))
-
-    cmap_parents = cc.glasbey_light[:len(parents)]
-    cmap_parents_nocov = cc.gray[0:len(cc.gray):(len(cc.gray)//len(parents_nocov))]
+    cmap = {}
+    i = 0
     
-    seg = hv.Overlay([
-        hv.Segments(data[data.source==s], ['start', 'target', 'end', 'target'], label=s)
-        .opts(line_width=30, color=c, tools=[hover])
-        for s, c in zip(parents + parents_nocov, cmap_parents + cmap_parents_nocov)
-    ]).opts(**plot_opts)
+    for parent in data.parent.unique():
+        if 'NoCov' in parent:
+            cmap[parent] = 'gray'
+        else:
+            cmap[parent] = cc.glasbey_light[i]
+            i += 1
+
+    subplots = []
+
+    for cluster in clusters:
+        data_c = data[data.target.isin(cluster)]
+        data_c['target_loc'] = pd.Categorical(data_c.target).codes
+
+        parents_all = data_c.parent.unique()
+        
+        subplot_layer = []
+
+        for i ,s in enumerate(sorted(data_c.parent.unique())):
+            data_c_s = data_c[data_c.parent==s]
+
+            # Add an offset to better see breakpoint overlap
+            data_c_s.target_loc = data_c_s.target_loc + 0.03*i
+            
+            subplot_layer.append(
+                hv.Segments(
+                    data_c_s, ['start', 'target_loc', 'end', 'target_loc'], label=s
+                )
+                .opts(line_width=15, color=cmap[s],
+                      tools=[hover],
+                      default_tools=["box_zoom", "reset"])
+            )
+
+        yaxis_pos = range(data_c.target.nunique())
+        yaxis_ticks = data_c.target.unique()
+        
+        overlay = (
+            hv.Overlay(subplot_layer)
+            .opts(**plot_opts)
+            .relabel("Phage").opts(yticks=list(zip(yaxis_pos, yaxis_ticks)))
+        )
+
+        subplots.append(overlay)
+        
+    seg = hv.Layout(subplots).opts(shared_axes=True).cols(2)
 
     hv.save(seg, '/tmp/cedric/modular_painting_tests/paintings.html')

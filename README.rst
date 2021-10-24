@@ -19,4 +19,3 @@ Contribute
 
 - Issue Tracker: `github <https://github.com/Puumanamana/module_painting/issues>`_
 - Source Code: `github <https://github.com/Puumanamana/module_painting>`_
-
