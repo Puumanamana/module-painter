@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 from modular_painter.display import get_palette
 from modular_painter.arc import Arc
 from modular_painter.coverage import Coverage
-from modular_painter.coverage_util import merge_contiguous_blast_hits
 
 ## TO DO: only create database once for each sample
 

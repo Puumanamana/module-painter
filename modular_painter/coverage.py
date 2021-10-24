@@ -21,9 +21,19 @@ class Coverage:
     def __len__(self):
         return sum(1 for arc in self.arcs if not arc.flagged)
 
+    def get_last_arc(self):
+        max_end = max(arc.end for arc in self.arcs if not arc.flagged)
+        arc_max_end = [arc for arc in self.arcs if not arc.flagged and arc.end == max_end]
+
+        min_start = min(arc.start for arc in arc_max_end)
+        arc_max_end_min_start = next(arc for arc in arc_max_end if arc.start == min_start)
+
+        return arc_max_end_min_start
+
     def iter_arcs(self):
         arcs = [arc for arc in self.arcs if not arc.flagged]
-        return iter([arcs[-1]] + arcs)
+        last_arc = self.get_last_arc()
+        return iter([last_arc] + arcs)
     
     def iter_arcs_parent(self, parent):
         arcs = [arc for arc in self.arcs if not arc.flagged and parent in arc.meta]
@@ -217,6 +227,7 @@ class Coverage:
 
         for arc in arcs:
             arc.marked = False
+
         arcs[B_1].marked = True # Mark the 1st arc
         t_[B_1] = 1
         B_i = B_1
@@ -255,8 +266,10 @@ class Coverage:
                 arcs[B_i].marked = True
                 t_[B_i] = i
 
-        S = Coverage(*[S[i] for i in indices])
-        S.sort()
+        for arc in self.arcs:
+            arc.flag()
 
-        return S
+        for i in indices:
+            S[i].unflag()
 
+        self.sort()

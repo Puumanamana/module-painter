@@ -148,11 +148,11 @@ def test_lee_and_lee_case_1():
         ])
     )
     cov.sort()
-    opt_cov = cov.get_minimal_coverage()
+    cov.get_minimal_coverage()
 
-    assert len(opt_cov) == 5
-    assert opt_cov.is_covered()
-    assert opt_cov.arcs == [
+    assert len(cov) == 5
+    assert cov.is_covered()
+    assert [arc for arc in cov.arcs if not arc.flagged] == [
         Arc(*boundaries, 100) for boundaries in
         [(0,22), (21,40), (39,60), (59,80), (79,110)]
     ]
@@ -165,11 +165,11 @@ def test_lee_and_lee_case_2():
         ])
     )
     cov.sort()
-    opt_cov = cov.get_minimal_coverage()
+    cov.get_minimal_coverage()
 
-    assert len(opt_cov) == 4
-    assert opt_cov.is_covered()
-    assert opt_cov.arcs == [
+    assert len(cov) == 4
+    assert cov.is_covered()
+    assert [arc for arc in cov.arcs if not arc.flagged] == [
         Arc(*boundaries, 100) for boundaries in
         [(10,25), (24,50), (49,70), (69,110)]
     ]
@@ -183,11 +183,11 @@ def test_lee_and_lee_case_3():
         ])
     )
     cov.sort()
-    opt_cov = cov.get_minimal_coverage()
+    cov.get_minimal_coverage()
 
-    assert len(opt_cov) == 5
-    assert opt_cov.is_covered()
-    assert opt_cov.arcs == [
+    assert len(cov) == 5
+    assert cov.is_covered()
+    assert [arc for arc in cov.arcs if not arc.flagged] == [
         Arc(*boundaries, 100) for boundaries in
         [(0,22), (21,40), (39,60), (59,80), (79,110)]
     ]
