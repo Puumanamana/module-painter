@@ -101,6 +101,7 @@ def select_parents_by_sparsity(bk):
                     score_max = score # score of the best parent
                     parents_max = (p1, p2) # parent pair with the max freq
 
+
         bk = remove_alt_parents(bk, parents_max)
 
         multicov = bk[['bin_id', 'target', 'i1', 'i2']].duplicated().sum()

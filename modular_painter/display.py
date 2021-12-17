@@ -30,8 +30,8 @@ def normalize(x, start, end):
 
 def display_genomes(genomes, clusters=None, norm=True):
     data = pd.concat({
-        name: genome.to_pandas()
-        for (name, genome) in genomes.items()
+        genome.target: genome.to_pandas()
+        for genome in genomes
     }).reset_index(level=1, drop=True).rename_axis(index='target').reset_index()
     
     if norm:

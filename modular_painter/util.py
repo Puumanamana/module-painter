@@ -71,6 +71,7 @@ def get_minimap_graph(fasta, min_id=0.8, min_cov=0.5, verbose=0, threads=1):
 
     edges_array = np.array(graph.vs['name']).astype(int)
 
-    components = dict((edges_array[edge], i) for (i, component) in enumerate(graph.components()) for edge in component)
+    components = dict((edges_array[edge], i) for (i, component) in enumerate(graph.components())
+                      for edge in component)
 
     return pd.Series(components)

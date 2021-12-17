@@ -76,7 +76,7 @@ class Coverage:
         data = dict(
             start=np.zeros(n),
             end=np.zeros(n),
-            parent=np.zeros(n),
+            parent=np.empty(n, dtype="<U32"),
             flag=np.zeros(n)
         )
 
@@ -89,6 +89,9 @@ class Coverage:
         df = pd.DataFrame(data).assign(target=self.target)
 
         return df
+
+    def remove_flagged(self):
+        self.arcs = [arc for arc in self.arcs if not arc.flagged]
 
     def is_covered(self):
         arcs = self.iter_arcs()
@@ -159,6 +162,8 @@ class Coverage:
         self.sort()
 
     def merge_equal_intervals(self):
+        if len(self) < 2:
+            return
         arcs = self.iter_arcs()
         prev_arc = next(arcs)
         for arc in arcs:
@@ -273,3 +278,44 @@ class Coverage:
             S[i].unflag()
 
         self.sort()
+
+    def get_junctions(self):
+        '''
+        Assumes perfect coverage
+        '''
+
+        if len(self) == 1:
+            return pd.DataFrame([])
+
+        data = np.zeros(len(self), dtype=[
+            ('parents', '<U128'),
+            # ('parents_set', '<U128'),
+            ('start', 'uint32'),
+            ('end', 'uint32'),
+            ('i1', 'uint32'),
+            ('i2', 'uint32')
+        ])
+
+        prev_i = len(self) - 1
+        prev = self.arcs[prev_i]
+
+        for i in range(len(self)):
+            curr = self.arcs[i]
+
+            (p1, p2) = ('/'.join(sorted(prev.meta)),
+                        '/'.join(sorted(curr.meta)))
+
+            data[i] = (
+                "{} <-> {}".format(p1, p2),
+                curr.start,
+                (prev.end+1) % self.size,
+                prev_i,
+                i
+            )
+            prev_i = i
+            prev = curr
+
+        df = pd.DataFrame(data)
+        df['target'] = self.target
+
+        return df

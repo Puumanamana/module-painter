@@ -12,7 +12,7 @@ def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8,
                       verbose=False, threads=1, min_dist=100):
 
     # Find breakpoints in all genomes
-    breaks = (pd.concat([painting.get_junctions() for painting in paintings.values()])
+    breaks = (pd.concat([painting.get_junctions() for painting in paintings])
               .reset_index(drop=True).reset_index())
     breaks['bin_id'] = -1
 
@@ -75,10 +75,10 @@ def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
     """
 
     # Intervals with fillers
-    nocovs = pd.DataFrame([[target, arc.start, arc.end]
-                           for (target, painting) in paintings.items()
-                           for arc in painting.data
-                           if 'NoCov' in arc.data.index],
+    nocovs = pd.DataFrame([[painting.target, arc.start, arc.end]
+                           for painting in paintings
+                           for arc in painting.arcs
+                           if arc.meta == "NA"],
                           columns=['target', 'start', 'end'])
 
     nocovs_groups = nocovs.reset_index().groupby('target').agg(list)
@@ -91,9 +91,8 @@ def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
     nocovs['bin_id'] = bin_ids.astype(str).str.replace(r'^(\d)', r'NoCov-\1', regex=True).sort_index()
     nocovs = nocovs.set_index(['target', 'start', 'end']).bin_id
 
-    for target, painting in paintings.items():
-        for arc in painting.data:
-            name = (target, arc.start, arc.end)
+    for painting in paintings:
+        for arc in painting.arcs:
+            name = (painting.target, arc.start, arc.end)
             if name in nocovs.index:
-                arc.data.rename({'NoCov': nocovs.loc[name]}, inplace=True)
-                # arc.data.index = pd.Index([nocovs.loc[name]] * len(arc.data), name='parent')
+                arc.meta = nocovs.loc[name]

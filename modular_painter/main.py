@@ -1,7 +1,7 @@
 from modular_painter.parser import parse_args
 from modular_painter.blast_genomes import get_raw_coverage
+# from modular_painter.minimap_genomes import minimap
 
-from modular_painter.painting import paint_genomes
 from modular_painter.breakpoints import handle_missing_data, group_breakpoints
 from modular_painter.clustering import select_parents_by_sparsity, cluster_breakpoints
 from modular_painter.display import display_genomes
@@ -38,40 +38,37 @@ def main():
         coverage.fill_gaps(args.min_module_size)
         # Remove embedded intervals
         coverage.simplify_embedded()
-
+        # Lee and Lee
         coverage.get_minimal_coverage()
+        # Cleanup
+        coverage.remove_flagged()
 
         if coverage.target in "RSWXdZa":
             print(coverage)
 
-    import ipdb;ipdb.set_trace()
-    # paintings = paint_genomes(args.fasta, species,
-    #                           min_module_size=args.min_module_size,
-    #                           arc_eq_diffs=args.arc_eq_diffs)
+    handle_missing_data(args.fasta[1], coverages, min_id=0.8,
+                        min_cov=0.8, threads=1)
 
-    # handle_missing_data(args.fasta[0], paintings, min_id=0.8,
-    #                     min_cov=0.8, threads=1)
+    breakpoints = group_breakpoints(coverages, args.fasta[1],
+                                    min_len=10, min_id=0.8, min_cov=0.8,
+                                    threads=1)
+    bk_unique = select_parents_by_sparsity(breakpoints)
 
-    # breakpoints = group_breakpoints(paintings, args.fasta[0],
-    #                                 min_len=10, min_id=0.8, min_cov=0.8,
-    #                                 threads=1)
-    # bk_unique = select_parents_by_sparsity(breakpoints)
+    # For clustering and display, make parents unique in coverage
+    for (target, i1, i2, parents, _, _, _) in bk_unique.to_numpy():
+        (l, r) = (paintings[target].data[i1], paintings[target].data[i2])
 
-    # # For clustering and display, make parents unique in coverage
-    # for (target, i1, i2, parents, _, _, _) in bk_unique.to_numpy():
-    #     (l, r) = (paintings[target].data[i1], paintings[target].data[i2])
+        if not parents[0] in l.data.index:
+            (l, r) = (r, l)
 
-    #     if not parents[0] in l.data.index:
-    #         (l, r) = (r, l)
+        l.data = l.data.loc[[parents[0]]]
+        r.data = r.data.loc[[parents[1]]]
 
-    #     l.data = l.data.loc[[parents[0]]]
-    #     r.data = r.data.loc[[parents[1]]]
+    print(*list(paintings.values()))
 
-    # print(*list(paintings.values()))
+    clusters = cluster_breakpoints(bk_unique, gamma=0.75)
 
-    # clusters = cluster_breakpoints(bk_unique, gamma=0.75)
-
-    # display_genomes(paintings, clusters=clusters, norm=True)
+    display_genomes(coverages, clusters=clusters, norm=True)
     
 
 if __name__ == '__main__':
