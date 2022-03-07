@@ -63,7 +63,7 @@ class Arc:
         # case 1: both intervals wrap around
         if self.end >= self.size and other.end >= self.size:
             return 0
-        # case 2: wrap around
+        # case 2: self wraps around
         if other.start < self.start:
             return max(0, other.start + (self.size-self.end))
         # general case

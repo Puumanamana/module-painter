@@ -25,65 +25,82 @@ def get_palette(n):
 
     return palette
 
+def custom_cmap():
+    return dict(
+        A="#F1C40F", # yellow/orange
+        B="#40E0D0", # light blue
+        C="#008080", # teal
+        D="#FF0000", # red
+        E="#808000", # olive
+        F="#FF7F50", # orange
+        G="#E98DFF", # purple
+        H="#008000", # green
+        I="#0000FF", #  
+        J="#3498DB", # blue
+        K="#641E16", # dark red
+        L="#800000", # brown
+        M="#C911F6" # pink
+    )
+
 def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
 def display_genomes(genomes, clusters=None, norm=True):
-    data = pd.concat({
-        genome.target: genome.to_pandas()
-        for genome in genomes
-    }).reset_index(level=1, drop=True).rename_axis(index='target').reset_index()
+
+    data = pd.concat([
+        genome.to_pandas()
+        for genome in genomes.values()
+    ]).drop(columns="flag").reset_index(drop=True)
     
     if norm:
         to_add = []
 
         for target in data.target.unique():
-            data_t = data[data.target == target]
-            first_idx = data_t.index[0]
-            extra = abs(data.loc[first_idx, 'start'] - 1)
-            # extra = data.loc[last_idx, 'end'] - genomes[target].mod
+            data_t = data[data.target == target].sort_values(by=["start", "end"])
+            last_idx = data_t.index[-1]
+            extra = data_t.end.iloc[-1] - genomes[target].size
 
             if extra > 0:
-                data.loc[first_idx, 'start'] = 1
-                to_add += [(data_t.loc[first_idx, 'target'],
-                            data_t.loc[first_idx, 'parent'],
-                            genomes[target].mod-extra+1,
-                            genomes[target].mod)]
+                data.loc[last_idx, 'end'] = genomes[target].size
+                
+                to_add.append((0, extra,
+                               data_t.loc[last_idx, 'parent'],
+                               data_t.loc[last_idx, 'target']))
 
-        first_idx = data.index.max() + 1
+        offset = data.index.max() + 1
         for i, entry in enumerate(to_add):
-            data.loc[i+first_idx] = entry
+            data.loc[i+offset] = entry
                 
         data = data.sort_values(by=['target', 'start', 'end']).reset_index(drop=True)
-            
+
     hover = HoverTool(tooltips=[('Parent', '@parent')])
     
     legend_opts = dict(
-        # label_text_font_size="12px",
-        # label_text_line_height=20, # doesnt seem to be doing anything
-        # spacing=0,
         glyph_height=15,
         label_height=15,
      )
 
     plot_opts = dict(
-        width=700, height=40*data.target.nunique(),
+        width=700, height=50*data.target.nunique(),
         xlabel='Position', ylabel='Phage',
+        gridstyle=dict(ygrid_line_color='gray', xgrid_line_alpha=0, ygrid_line_dash=[4, 4]),
+        show_grid=True,
         legend_position="right",
         legend_limit=50,
         legend_offset=(30, 0),
         legend_opts=legend_opts,
     )
 
-    cmap = {}
-    i = 0
+    # cmap = {}
+    # i = 0
+    cmap = custom_cmap()
     
     for parent in data.parent.unique():
-        if 'NoCov' in parent:
+        if 'NA' in parent:
             cmap[parent] = 'gray'
-        else:
-            cmap[parent] = cc.glasbey_light[i]
-            i += 1
+        # else:
+        #     cmap[parent] = cc.glasbey_light[i]
+        #     i += 1
 
     subplots = []
 
@@ -92,14 +109,14 @@ def display_genomes(genomes, clusters=None, norm=True):
         data_c['target_loc'] = pd.Categorical(data_c.target).codes
 
         parents_all = data_c.parent.unique()
-        
+       
         subplot_layer = []
 
-        for i ,s in enumerate(sorted(data_c.parent.unique())):
+        for i, s in enumerate(sorted(data_c.parent.unique())):
             data_c_s = data_c[data_c.parent==s]
 
             # Add an offset to better see breakpoint overlap
-            data_c_s.target_loc = data_c_s.target_loc + 0.03*i
+            data_c_s.target_loc = data_c_s.target_loc + 0.05*i
             
             subplot_layer.append(
                 hv.Segments(

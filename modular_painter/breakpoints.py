@@ -4,95 +4,77 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 import igraph
+from sklearn.cluster import AgglomerativeClustering
 
-from util import subset_fasta, get_minimap_graph
+from util import subset_fasta, build_homology_graph
 
 
-def group_breakpoints(paintings, fasta, min_len=10, min_id=0.8, min_cov=0.8,
-                      verbose=False, threads=1, min_dist=100):
-
-    # Find breakpoints in all genomes
-    breaks = (pd.concat([painting.get_junctions() for painting in paintings])
-              .reset_index(drop=True).reset_index())
-    breaks['bin_id'] = -1
-
-    # Handle differently ponctual and interval break points
-    # ponctual case: based on common parents and position on genome
-    breaks_ponct = breaks[breaks.end-breaks.start <= min_len]
-    breaks.loc[breaks_ponct.index, 'bin_id'] = bin_punctual_bk(
-        breaks_ponct, min_dist, min_len
-    )
-    # interval case: based on sequence similarity and coverage
-    breaks_itv = breaks[breaks.end-breaks.start > min_len]
-    breaks_itv_grouped = breaks_itv.groupby('target').agg(list)
-    bk_fasta = subset_fasta(fasta, breaks_itv_grouped, min_len=min_len)
-    bins_itv = get_minimap_graph(bk_fasta, min_id=min_id, min_cov=min_cov,
-                                          verbose=0, threads=threads)
-    breaks.loc[bins_itv.index, 'bin_id'] = bins_itv + breaks.bin_id.max() + 1
-
-    # duplicate breakpoint for all possible combination of parent1/parent2
-    breaks.parents = [list(product(x.split('/'), y.split('/')))
-                      for (x,y) in breaks.parents.str.split(' <-> ')]
-    breaks = breaks.drop(columns='index').explode('parents')
-
-    # Remove combination with the same parent
-    breaks = breaks[breaks.parents.map(set).map(len) == 2].reset_index(drop=True)
-
-    return breaks
-
-def bin_punctual_bk(breaks, min_dist, min_len):
+def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None, threads=1):
     """
-    Find groups of breakpoints with the same parents such that
-    the distance between 2 successive breakpoints is smaller than min_dist bp
-
-    Returns bin assignment of each breakpoints
+    Extract breakpoints in all genomes and maps them together
     """
 
-    bk_punct = breaks.groupby('parents').agg(dict(start=sorted, index=list))
+    # Fetch and format breakpoint data
+    breakpoint_data = pd.concat([
+        pd.DataFrame({attr: graph.es[attr] for attr in graph.es.attributes()})
+        for graph in graphs
+    ])
+    breakpoint_data["eid"] = [eid for graph in graphs for eid in graph.es.indices]
+    breakpoint_data = breakpoint_data.groupby(["ref", "start", "end"]).eid.agg(lambda x: ";".join(map(str, x)))
 
-    bin_assignment = pd.Series(-1, index=breaks.index)
-    bin_id = 0
-    for _, (starts, indices) in bk_punct.iterrows():
+    #===== Assign bin ids ====#
+    bk_fasta = subset_fasta(fasta, breakpoint_data, min_len=min_overlap, outprefix=f"{outdir}/breakpoints")
+    homology_graph = build_homology_graph(bk_fasta, min_id=0.95, verbose=0, threads=threads)
 
-        if len(starts) == 1:
-            bin_assignment[indices[0]] = bin_id
-            bin_id += 1
-            continue
+    #==== Extract connected components ====#
+    bins = {}
+    vertices_array = np.array(homology_graph.vs['name'])
+    for i, component in enumerate(homology_graph.components()):
+        for vertex in component:
+            (ref, _, _, eids) = vertices_array[vertex].split("|")
+            for eid in eids.split(";"):
+                bins[(ref, eid)] = i
+    
+    bins = pd.Series(bins, name="bin").rename_axis(index=["ref","eid"]).sort_index()
 
-        # Increment bin_id if the distance between 2 successive breakpoints
-        # is greater than min_dist bp
-        bin_assignment[indices] = bin_id
-        bin_assignment[indices[1:]] += np.cumsum(np.diff(starts) > min_dist)
+    for graph in graphs:
+        ref = graph.vs["ref"][0]
+        graph.es["bk_id"] = bins.loc[ref].to_numpy()
 
-        bin_id = bin_assignment[indices[-1]] + 1
-
-    return bin_assignment
-
-
-def handle_missing_data(genomes, paintings, min_id=0.8, min_cov=0.8, threads=1):
+def handle_missing_data(genomes, coverages, min_id=0.9, threads=1, outdir=None):
     """
     Check if the missing data is approximately the same in different genomes
     """
 
     # Intervals with fillers
-    nocovs = pd.DataFrame([[painting.target, arc.start, arc.end]
-                           for painting in paintings
-                           for arc in painting.arcs
-                           if arc.meta == "NA"],
-                          columns=['target', 'start', 'end'])
+    nocovs_df = pd.DataFrame([
+        [coverage.ref, arc.start, arc.end]
+        for coverage in coverages
+        for arc in coverage.arcs if arc.meta == {"NA"}
+    ], columns=["ref", "start", "end"])
 
-    nocovs_groups = nocovs.reset_index().groupby('target').agg(list)
+    nocovs_df["uid"] = np.arange(len(nocovs_df))
+    nocovs_df = nocovs_df.set_index(["ref", "start", "end"]).uid.sort_index()
+
     # Save to fasta for minimap alignment
-    nocov_fasta = subset_fasta(genomes, nocovs_groups)
+    nocov_fasta = subset_fasta(genomes, nocovs_df, outprefix=f"{outdir}/missing_data")
 
-    # Build graph and extract connected bin_ids
-    bin_ids = get_minimap_graph(nocov_fasta, min_id=min_id, min_cov=min_cov,
-                                verbose=0, threads=threads)
-    nocovs['bin_id'] = bin_ids.astype(str).str.replace(r'^(\d)', r'NoCov-\1', regex=True).sort_index()
-    nocovs = nocovs.set_index(['target', 'start', 'end']).bin_id
+    # Build homology graph between NA segments
+    homology_graph = build_homology_graph(nocov_fasta, min_id=min_id,
+                                          verbose=0, threads=threads)
 
-    for painting in paintings:
-        for arc in painting.arcs:
-            name = (painting.target, arc.start, arc.end)
-            if name in nocovs.index:
-                arc.meta = nocovs.loc[name]
+    # Extract connected components
+    bin_mapping = {}
+    vertices_array = np.array(homology_graph.vs['name'])
+    for i, component in enumerate(homology_graph.components()):
+        for vertex in component:
+            (name, start, end, _) = vertices_array[vertex].split("|")
+            bin_mapping[(name, int(start), int(end))] = i
+
+    # Update NAs with corresponding bin id
+    for coverage in coverages:
+        for arc in coverage.arcs:
+            name = (coverage.ref, arc.start, arc.end)
+            if name in bin_mapping:
+                bin_id = bin_mapping[name]
+                arc.meta = {f"NA-{bin_id}"}

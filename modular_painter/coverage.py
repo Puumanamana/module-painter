@@ -1,5 +1,6 @@
 from itertools import groupby
 
+import igraph
 import pandas as pd
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
@@ -11,12 +12,13 @@ from modular_painter.coverage_util import get_filler_arc, get_successor
 
 class Coverage:
 
-    def __init__(self, *arcs, target=None):
+    def __init__(self, *arcs, ref=None):
         self.arcs = list(arcs)
-        self.target = target
+        self.ref = ref
 
         if arcs:
             self.size = self.arcs[0].size
+        self.sort()
 
     def __len__(self):
         return sum(1 for arc in self.arcs if not arc.flagged)
@@ -30,17 +32,24 @@ class Coverage:
 
         return arc_max_end_min_start
 
-    def iter_arcs(self):
+    def iter_arcs(self, wrap=False):
         arcs = [arc for arc in self.arcs if not arc.flagged]
-        last_arc = self.get_last_arc()
-        return iter([last_arc] + arcs)
+        if wrap:
+            last_arc = self.get_last_arc()
+            arcs = [last_arc] + arcs
+        return iter(arcs)
     
-    def iter_arcs_parent(self, parent):
+    def iter_arcs_for_parent(self, parent):
+        """
+        Iter over arc from {parent}. Assumes self.arcs is (start, end) sorted.
+        """
         arcs = [arc for arc in self.arcs if not arc.flagged and parent in arc.meta]
         return iter([arcs[-1]] + arcs)
 
     def __repr__(self, subset=None):
-        display = [f"Target: {self.target} (L={self.size})"]
+        if isinstance(subset, str):
+            subset = set(subset)
+        display = [f"Ref: {self.ref} (L={self.size})"]
         for i, arc in enumerate(self.arcs):
             if arc.flagged:
                 continue
@@ -63,13 +72,22 @@ class Coverage:
     @classmethod
     def from_coverages(cls, *covs):
         size = covs[0].size
-        target = covs[0].target
+        ref = covs[0].ref
         assert all(cov.size==size for cov in covs)
-        assert all(cov.target==target for cov in covs)
+        assert all(cov.ref==ref for cov in covs)
 
         arcs = [arc for cov in covs for arc in cov.arcs]
 
-        return cls(*arcs, target=target)
+        return cls(*arcs, ref=ref)
+
+    @classmethod
+    def from_pandas(cls, df, size):
+        ref = df.sacc.iloc[0]
+        assert all(df.sacc == ref)
+
+        arcs = [Arc(row.sstart, row.send, size, {row.qacc}) for _, row in df.iterrows()]
+
+        return cls(*arcs, ref=ref)
 
     def to_pandas(self):
         n = len(self)
@@ -83,10 +101,10 @@ class Coverage:
         for i, arc in enumerate(self.arcs):
             data["start"][i] = arc.start
             data["end"][i] = arc.end
-            data["parent"][i] = arc.meta
+            data["parent"][i] = list(arc.meta)[0]
             data["flag"][i] = arc.flagged
 
-        df = pd.DataFrame(data).assign(target=self.target)
+        df = pd.DataFrame(data).assign(ref=self.ref)
 
         return df
 
@@ -94,41 +112,53 @@ class Coverage:
         self.arcs = [arc for arc in self.arcs if not arc.flagged]
 
     def is_covered(self):
-        arcs = self.iter_arcs()
-        current_end = next(arcs).end - self.size
+        """
+        Assumes self.arcs is (start, end) sorted
+        """
+        arcs = self.iter_arcs(wrap=True)
+        current_arc = next(arcs)
 
         for i, arc in enumerate(arcs):
-            if arc.start > current_end: # There is a hole
-                print(f"{arc.start} < {current_end}")
+            dist = current_arc.dist_to_next(arc)
+            
+            if dist > 0: # There is a hole
+                print(f"{current_arc.end} < {arc.start} (dist={dist})")
                 return False
 
-            if arc.end > current_end: # There is a hole
-                current_end = arc.end
+            if arc.end > current_arc.end:
+                current_arc = arc
 
         return True
 
-    def sync_boundaries(self, max_dist, which='start'):
+    def sync_boundaries(self, max_dist, attrs):
         '''
         Change intervals boundaries to make them similar
         '''
-        arcs = list(self.iter_arcs())
-        boundary = np.array([getattr(arc, which) for arc in arcs])
+        arcs = list(self.iter_arcs(wrap=False))
+        boundaries = np.array([[getattr(arc, attr) for attr in attrs] for arc in arcs])
+
+        # Wrapping around condition
+        wrap = boundaries[:, -1] > self.size
+        boundaries[wrap, -1] -= self.size
 
         model = AgglomerativeClustering(
             linkage='complete',
-            distance_threshold=max_dist,
+            distance_threshold=max_dist*len(attrs),
             affinity='l1',
             n_clusters=None
-        ).fit(boundary.reshape(-1, 1))
+        ).fit(boundaries)
 
         cluster_info = pd.DataFrame({
             "indices": np.arange(len(arcs)),
-            "cluster": model.labels_,
-            which: boundary,
+            "cluster": model.labels_
         })
+        for i, attr in enumerate(attrs):
+            cluster_info[attr] = boundaries[:, i]
 
+        # Compute each cluster's boundary: min of starts, max of ends
         agg_fn = dict(start=min, end=max)
-        agg_fn = {"indices": list, which: agg_fn[which]}
+        agg_fn = {attr: agg_fn[attr] for attr in attrs}
+        agg_fn["indices"] = list
         
         cluster_info = (
             cluster_info
@@ -136,12 +166,22 @@ class Coverage:
             .groupby("cluster").agg(agg_fn)
         )
 
-        for (indices, bound) in cluster_info.values:
+        # Sync boundaries of arcs in each cluster
+        for v in cluster_info.values:
+            bounds = v[:-1]
+            indices = v[-1]
             if len(indices) < 2:
                 continue
             for idx in indices:
-                setattr(arcs[idx], which, bound)
-
+                arc = arcs[idx]
+                
+                for (attr, bound) in zip(attrs, bounds):
+                    # A bit more complicated than it should be because
+                    # we need to handle the wrapping condition
+                    current = getattr(arc, attr)
+                    diff = bound - (current % self.size)
+                    if diff != 0:
+                        setattr(arc, attr, current+diff)
         self.sort()
 
     def extend_arcs_per_parent(self, max_extend_dist):
@@ -151,10 +191,12 @@ class Coverage:
         - if the distance is shorter than max_extend_dist, merge them
         """
         for parent in self.get_all_parents():
-            arcs = self.iter_arcs_parent(parent)
+            arcs = self.iter_arcs_for_parent(parent)
             last_arc = next(arcs)
             for arc in arcs:
-                if last_arc.is_embedded(arc):
+                if arc.flagged:
+                    continue
+                if last_arc.is_embedded(arc, strict=False):
                     last_arc.flag()
                 else:
                     last_arc.try_fuse_with(arc, max_extend_dist)
@@ -164,7 +206,7 @@ class Coverage:
     def merge_equal_intervals(self):
         if len(self) < 2:
             return
-        arcs = self.iter_arcs()
+        arcs = self.iter_arcs(wrap=True)
         prev_arc = next(arcs)
         for arc in arcs:
             prev_arc.try_merge_with(arc)
@@ -174,7 +216,7 @@ class Coverage:
         """
         Fill gaps (if any) between arcs
         """
-        arcs = self.iter_arcs()
+        arcs = self.iter_arcs(wrap=True)
         prev_arc = next(arcs)
         fillers = []
 
@@ -194,7 +236,7 @@ class Coverage:
         self.sort()
 
     def simplify_embedded(self):
-        arcs = self.iter_arcs()
+        arcs = self.iter_arcs(wrap=True)
         prev_arc = next(arcs)
 
         for arc in arcs:
@@ -278,7 +320,7 @@ class Coverage:
             S[i].unflag()
 
         self.sort()
-
+        
     def get_junctions(self):
         '''
         Assumes perfect coverage
@@ -308,7 +350,7 @@ class Coverage:
             data[i] = (
                 "{} <-> {}".format(p1, p2),
                 curr.start,
-                (prev.end+1) % self.size,
+                prev.end % self.size,
                 prev_i,
                 i
             )
@@ -316,6 +358,33 @@ class Coverage:
             prev = curr
 
         df = pd.DataFrame(data)
-        df['target'] = self.target
+        df['ref'] = self.ref
 
         return df
+
+    def get_overlap_graph(self, min_overlap=10):
+        g = igraph.Graph()
+
+        # add vertices
+        for i, arc in enumerate(self.iter_arcs(wrap=False)):
+            for meta in arc.meta:
+                uid = f"{self.ref}.{meta}.{arc.start}-{arc.end}"
+                g.add_vertex(name=uid, parent=meta, order=i, ref=self.ref,
+                             start=arc.start, end=arc.end)
+
+        # add edges
+        arcs = self.iter_arcs(wrap=True)
+        prev_arc = next(arcs)
+
+        for arc in arcs:
+            for meta1 in prev_arc.meta:
+                uid1 = f"{self.ref}.{meta1}.{prev_arc.start}-{prev_arc.end}"
+                start = arc.start
+                end = prev_arc.end % self.size # wrapping condition. This should be the only arc with end >= size
+                
+                for meta2 in arc.meta:
+                    uid2 = f"{self.ref}.{meta2}.{arc.start}-{arc.end}"
+                    g.add_edge(uid1, uid2, ref=self.ref, start=start, end=end)
+            prev_arc = arc
+
+        return g
