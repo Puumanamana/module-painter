@@ -1,24 +1,9 @@
 import igraph
 import numpy as np
 
-def compute_arc_dist(i1, i2, size):
-    """
-    assymmetric distance between two intervals.
-    """
-    (x1, y1) = i1
-    (x2, y2) = i2
-    
-    # case 1: both intervals wrap around
-    if y1 >= size and y2 >= size:
-        return 0
-    # case 2: i1 wraps around
-    if x2 < x1:
-        return max(0, x2-(y1-size))
-    # general case
-    return max(0, x2-y1)
 
 class OverlapGraph(igraph.Graph):
-    def __init__(self, arcs, size=None, target=None, *args, **kwargs):
+    def __init__(self, coverage, size=None, target=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target = target
         self.genome_size = size
@@ -28,50 +13,38 @@ class OverlapGraph(igraph.Graph):
 
         self.compute_all_overlaps()
 
-    def __len__(self):
-        return len(self.vs.indices)
-        
-    def add_arc(self, arc):
-        self.add_vertex(
-            start=arc.start, end=arc.end,
-            meta=arc.meta
-        )
-
-    def compute_all_overlaps(self):
-        """
-        Go iterate over all vertices in sorted order
-        - 2 embedded loops to compute all overlaps
-        - inner loop stops when there is no overlap with next
-        """
-        indices = np.array(self.vs.indices)
-        boundaries = np.array([
-            self.vs["start"],
-            self.vs["end"]
-        ]).T
-        
-        order = np.argsort(boundaries[:, 0] + 1.j*boundaries[:, 1])
-        indices = indices[order]
-        boundaries = boundaries[order, :]
-
-        for i, itv1 in enumerate(boundaries):
-            overlap = True
-            k = i
-
-            while overlap:
-                k = (k+1) % len(self)
-                itv2 = boundaries[k, :]
-                dist = compute_arc_dist(itv1, itv2, self.genome_size)
-                overlap = (dist <= 0) and (k != i)
-
-                if overlap:
-                    self.add_edge(indices[i], indices[k])
-
-    def __repr__(self, subset=None):
+    def __repr__(self):
         display = [f"Target: {self.target} (L={self.genome_size})"]
         for i, v in enumerate(self.vs):
-            if subset is not None:
-                if not v.meta.intersection(subset):
-                    continue
-            display.append(f"{i:3} - {v['start']:>9}{v['end']:>9}: {v['meta']}")
+            display.append(f"{i:3} - {v['start']:>9}{v['end']:>9}: {v['parent']}")
         return "\n".join(display)
-                
+
+    @classmethod
+    def from_coverage(cls, cov):
+        g = igraph.Graph()
+
+        # add vertices
+        for i, arc in enumerate(cov.iter_arcs(wrap=False)):
+            for meta in arc.meta:
+                uid = f"{cov.ref}.{meta}.{arc.start}-{arc.end}"
+                g.add_vertex(name=uid, parent=meta, order=i, ref=cov.ref,
+                             start=arc.start, end=arc.end)
+
+        # add edges
+        arcs = cov.iter_arcs(wrap=True)
+        prev_arc = next(arcs)
+
+        for arc in arcs:
+            for meta1 in prev_arc.meta:
+                uid1 = f"{cov.ref}.{meta1}.{prev_arc.start}-{prev_arc.end}"
+                start = arc.start
+                end = prev_arc.end % cov.size # wrapping condition. This should be the only arc with end >= size
+
+                for meta2 in arc.meta:
+                    uid2 = f"{cov.ref}.{meta2}.{arc.start}-{arc.end}"
+                    parents = "/".join(sorted([meta1, meta2]))
+                    g.add_edge(uid1, uid2, ref=cov.ref, start=start, end=end, parents=parents)
+            prev_arc = arc
+
+        return g
+        

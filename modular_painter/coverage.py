@@ -372,19 +372,24 @@ class Coverage:
                 g.add_vertex(name=uid, parent=meta, order=i, ref=self.ref,
                              start=arc.start, end=arc.end)
 
+        if len(self) == 1:
+            return g
+
         # add edges
         arcs = self.iter_arcs(wrap=True)
         prev_arc = next(arcs)
 
-        for arc in arcs:
+        for i, arc in enumerate(arcs):
             for meta1 in prev_arc.meta:
                 uid1 = f"{self.ref}.{meta1}.{prev_arc.start}-{prev_arc.end}"
                 start = arc.start
                 end = prev_arc.end % self.size # wrapping condition. This should be the only arc with end >= size
-                
                 for meta2 in arc.meta:
                     uid2 = f"{self.ref}.{meta2}.{arc.start}-{arc.end}"
-                    g.add_edge(uid1, uid2, ref=self.ref, start=start, end=end)
+                    parents = "/".join(sorted([meta1, meta2]))
+                    positions = ((i-1) % len(self), i)
+                    g.add_edge(uid1, uid2, ref=self.ref, pos=positions,
+                               start=start, end=end, parents=parents)
             prev_arc = arc
 
         return g

@@ -1,199 +1,150 @@
-from itertools import combinations
+import random
+from itertools import combinations, groupby
 import pandas as pd
+import numpy as np
 
+random.seed(42)
 
+def get_breakpoints(graphs):
+    breakpoints = []
 
-def get_bk_info(graphs):
-    bin_info = []
-
-    for graph in graphs:
+    for ref, graph in graphs.items():
         for e in graph.es:
-            parents = "/".join(sorted(graph.vs["parent"][i] for i in e.tuple))
-            bin_info.append([e['ref'], e.index, e['bk_id'], parents])
+            breakpoints.append([e.index, ref, e["bk_id"], e["parents"]])
 
-    bin_info = pd.DataFrame(bin_info, columns=["ref", "eid", "bk_id", "parents"])
-    bin_info.index = bin_info.ref + "-" + bin_info.eid.astype(str)
+    breakpoints = pd.DataFrame(breakpoints, columns=["eid", "ref", "bk_id", "parents"])
+    breakpoints["mult"] = breakpoints.duplicated(subset=["ref", "bk_id"], keep=False)
 
-    return bin_info
+    return breakpoints
 
-def recombination_prevalence_score(bk):
+def find_recombinations(bk):
     """
-    Compute prevalence of each possible recombination at each position
+    Identify each possible recombination
     """
     def get_sorted_recombs(x):
         return [tuple(sorted(xi)) for xi in combinations(x, 2)]
-    rc_prev = bk.groupby(["ref", "parents"]).bk_id.agg(get_sorted_recombs).explode().dropna().reset_index()
-    rc_prev["rc_score"] = rc_prev.groupby("bk_id").ref.transform(lambda x: len(set(x))) # recombination prevalence
-    rc_prev = rc_prev.explode("bk_id").drop_duplicates().set_index(["ref", "parents", "bk_id"])
-    indices = list(zip(bk.bk_id, bk.parents, bk.bk_id))
 
-    return rc_prev.reindex(index=indices).fillna(0).astype(int).values
+    # Get all possible recombinations
+    rc = bk.groupby(["ref", "parents"]).bk_id.agg(get_sorted_recombs)
+    # Reformat
+    rc = rc.explode().dropna().reset_index().rename(columns=dict(bk_id="bk_ids"))
 
-def recombination_abundance_score(bk):
-    """
-    Compute #total of recombinations for each parent
-    """
-    rc_abund = bk.groupby(["ref", "parents"]).bk_id.agg(lambda x: len(x)//2).sum(level="parents")
+    mult = bk.loc[bk.mult].set_index(["ref", "bk_id"]).sort_index().index
+    rc["mult"] = [any((ref, bk_id) in mult for bk_id in bk_ids)
+                  for (ref, bk_ids) in rc[['ref', 'bk_ids']].values]
+    
+    return rc
 
-    return rc_abund.loc[bk.parents].values
-
-def breakpoint_prevalence_score(bk):
-    """
-    Compute prevalence of each breakpoint
-    """
-    bk_prev = bk.groupby(["bk_id", "parents"]).ref.agg(len)
-    indices = list(zip(bk.bk_id, bk.parents))
-    return bk_prev.loc[indices].values
-
-def parents_abundance_score(bk):
-    """
-    Compute sum of abundance of each parent in breakpoint (across the whole dataset)
-    """
-    abund_scores = (
-        bk.assign(parents=bk.parents.str.split("/"))
-        .explode("parents")
-        .groupby(["ref", "parents"]).eid.agg(len)
-        .to_dict()
+def filter_recombinations(rc, bk):
+    # Compute recombinations metrics
+    scores = rc[rc.mult].groupby(["parents", "bk_ids"]).ref.agg(
+        rc_abund=len,
+        rc_prev=lambda x: len(set(x))
     )
-    scores = [sum(abund_scores[ref, p] for p in parents.split("/"))
-              for (ref, parents) in bk[["ref", "parents"]].values]
+    # Filter based on: 1) prevalence 2) abundance
+    scores = scores[scores.rc_prev==scores.rc_prev.max()]
+    scores = scores[scores.rc_abund==scores.rc_abund.max()]
+
+    # 3) on each breakpoint
+    bk_abund = bk.groupby(["parents", "bk_id"]).ref.agg(len).to_dict()
+    scores["bk_abund"] = [sum(bk_abund[(parents, bk_id)] for bk_id in bk_ids)
+                          for (parents, bk_ids) in scores.index]
+    # Filter based on breakpoints
+    # We pick the smallest bk abundance to not disrupt other potential recombinations
+    scores = scores[scores.bk_abund==scores.bk_abund.min()]
+
     return scores
 
-def score_parents(bk):
-    # Compute metrics for parent selection
-    # 1) subset bk_ids such that
-    #    a) mult
-    #    b) if only one choice with recomb, pick it
-    #    c) if 0 or more than 2, then we think
-    # Maybe:
-    # 1) identify all potential recombinations everywhere
-    # 2) rank them in terms of #links created
-    # 3) going from best to worst, resolve mult involving the recombination #i in ranked order.
-    # Q: how do we update this list so that we can use edges ids? --> recombination info needs to list the edge ids
-    # we need a dataframe for each recombination with: ref, parents, bk_id pair, edge_id pair
-    # 1) we score each recombination by grouping by bk_id and looking at the length (=prevalence). The scores need to be recomputed each time we update the edges
-    # 2) then we use a parent score: how many times does the parent pair occur overall in all recombinations
-    # 3) then we use breakpoint score: how often does this breakpoint occur regardless of any recombinations
-    # 4) then a phage score: how many times does the phage cover the genome where it appears
-
-    # 1) Recombination scores
-    scores = bk[["ref", "parents", "bk_id", "eid"]].assign(
-        rc_score=recombination_prevalence_score(bk),
-        pp_score=recombination_abundance_score(bk),
-        bk_score=breakpoint_prevalence_score(bk),
-        parent_score=parents_abundance_score(bk)
+def filter_breakpoints(bk):
+    scores = bk[bk.mult].groupby(["parents", "bk_id"]).ref.agg(
+        bk_abund=len,
+        bk_prev=lambda x: len(set(x))
     )
+    # Filter based on abundance
+    scores = scores[scores.bk_abund==scores.bk_abund.max()]
 
-    def choose(df, cols=None):
-        (ref, bk_id) = df.iloc[0][["ref", "bk_id"]]
-        i = 0
-        while len(df) > 1 and i < len(cols):
-            col = cols[i]
-            best = df[col].max()
-            df = df[df[col]==best]
-            i += 1
-        else:
-            df = df.sample(1)
-            print(f"Random choice for ref={ref} and bk_id={bk_id}")
-        return df.iloc[0].drop(["ref", "bk_id"])
-
-    # Issue with choose: we delete breakpoints again, without looking at the other, matching breakpoint.
-    # They both need to be handled simulatenously: groupby(bk_av, bk_ap) -> choose
-    
-    scores = scores.groupby(["ref", "bk_id"]).apply(
-        choose,
-        cols=[f"{col}_score" for col in ["rc", "pp", "bk", "parent"]]
-    )
-    
     return scores
 
-def select_parents(graphs):
+def filter_parents(scores, bk):
+    # Compute parent occurrence
+    par_abund = bk.parents.str.split("/").explode().value_counts().to_dict()
+    scores["par_abund"] = [sum(par_abund[parent] for parent in parents.split("/"))
+                           for (parents, _) in scores.index]
+    # Filter based on parent occurrence
+    scores = scores[scores.par_abund==scores.par_abund.max()]
+
+    return scores
+
+def select_by_recombinations(graphs):
     """
     Minimize number of different parent pairs
     - Iteratively choose parents with the most total recombinations
     - Solve equalities by choosing the parents that cover the most phages
     """
+    while True:
+        bk = get_breakpoints(graphs)
+        rc = find_recombinations(bk)
 
-    bk_info = get_bk_info(graphs)
+        if not rc.mult.any():
+            return
 
-    scores = score_parents(bk_info)
+        # Scoring and filtering
+        scores = filter_recombinations(rc, bk)
+        scores = filter_parents(scores, bk)
+        scores = scores.sample(1) # at random if equalities remain
 
-    eids_kept = scores.groupby("ref").eid.agg(set).to_dict()
+        # Best recomb
+        (parents, bk_ids) = scores.index[0]
 
-    for graph in graphs:
-        ref = graph.vs[0]['ref']
-        edges_to_rm = set(graph.es.indices) - eids_kept[ref]
-        import ipdb;ipdb.set_trace()
-        graph.delete_edges(edges_to_rm)
+        # Remove from graph
+        for ref, graph in graphs.items():
+            remove_alternative_breakpoints(graph, set(bk_ids), parents)
+        
+        print(f"Selection {parents} {set(bk_ids)}. Remaining: {rc.mult.sum()}")
+
+def select_by_breakpoints(graphs):
+    """
+    """
+    while True:
+        bk = get_breakpoints(graphs)
+
+        if not bk.mult.any():
+            return
+
+        # Scoring and filtering
+        scores = filter_breakpoints(bk)
+        scores = filter_parents(scores, bk)
+        scores = scores.sample(1) # at random if equalities remain
+
+        # Best recomb
+        (parents, bk_id) = scores.index[0]
+
+        # Remove from graph
+        for ref, graph in graphs.items():
+            remove_alternative_breakpoints(graph, {bk_id}, parents)
+        
+        print(f"Selection {parents} {bk_id}. Remaining: {bk.mult.sum()}")
+            
+def remove_alternative_breakpoints(graph, bk_, parents):
+    if len(graph.vs) < 2: # no breakpoints
+        return
+
+    # make sure graph has all breakpoints in bk_
+    if not len(graph.es.select(parents=parents, bk_id_in=bk_)) == len(bk_):
+        return
+
+    parents = set(parents.split("/"))
+
+    # Remove from graph
+    graph.delete_vertices(
+        vi for e in graph.es.select(bk_id_in=bk_)
+        for vi in e.tuple
+        if not graph.vs["parent"][vi] in parents
+    )
     
-    # # Sorted list of parents so that we count (A,B) + (A,B) the same way as (A,B) + (B, A)
-    # bk['par_set'] = bk.parents.apply(lambda x: tuple(sorted(x)))
+def select_parents(graphs):
 
-    # prev = "" # to remove later, checks for infinite loops that can happen in rare cases
-    # while True:
-    #     # Update bin info with remaining edges
-    #     remaining = [f"{e['ref']}-{e.index}" for g in graphs for e in g.es]
-    #     bk_info = bk_info.loc[remaining]
+    select_by_recombinations(graphs)
+    select_by_breakpoints(graphs)
 
-    #     # Identify multiple edges coming from a vertex -- stop if none
-    #     bk_info["mult"] = bk_info.groupby(["bk_id", "ref"]).parents.transform(
-    #         lambda x: len(set(x)) > 1
-    #     )
-
-    #     if not bk_info.mult.any():
-    #         break
-
-    #     # Count, for each parent pair,
-    #     # groupby(parent_pair, bin_id) --> how many genomes does this breakpoint affect
-    #     # then we sum the top 2 breakpoints for each parent --> score
-    #     parents_max = score_parents(bk_info)
-        
-
-        # # Get breakpoints with multiple options
-        # bk["mult"] = bk[["bin_id", "i1", "i2", "target"]].duplicated(keep=False)
-
-    #     if not bk.mult.any():
-    #         break
-
-    #     # Get parents with the most recombinations (and with multiple bk issues)
-    #     rc = count_recombinations(bk)
-    #     parent_pairs = rc.index[rc==rc.max()]
-
-    #     # Solve equalities by selecting the parents that cover the most phages overall
-    #     (parents_max, score_max) = (parent_pairs[0], 0)
-
-    #     if len(parent_pairs) > 1:
-    #         parent_freq = Counter([p for pair in bk.parents for p in pair])
-
-    #         for (p1, p2) in parent_pairs:
-    #             score = ( # penalty on NA
-    #                 parent_freq[p1] + ('NA' in p1) * -100 +
-    #                 parent_freq[p2] + ('NA' in p2) * -100
-    #             )
-    #             if score > score_max:
-    #                 score_max = score # score of the best parent
-    #                 parents_max = (p1, p2) # parent pair with the max freq
-
-    #     print(f'selecting {parents_max}')
-    #     # remove alternative parents where parents_max is present
-    #     bin_ids_with_parent = set(bk.bin_id[(bk.par_set == parents_max) & bk.mult])
-    #     is_bin_id = bk.bin_id.isin(bin_ids_with_parent) & bk.mult
-        
-    #     entries_to_rm = bk.index[bk.bin_id.isin(bin_ids_with_parent) &
-    #                              bk.mult &
-    #                              (bk.par_set != parents_max)].to_list()
-    #     # remove pairs for the preceding breakpoint
-    #     for bid in bin_ids_with_parent:
-    #         prev_indices = bk# []
-        
-    #     # bk.drop(entries_to_rm, inplace=True)
-
-    #     # to remove later, checks for infinite loops that can happen in rare cases
-    #     if prev == parents_max:
-    #         print(f"Infinite loop with parents: {prev}")
-    #         print(bk[bk.bin_id.isin(bin_ids_with_parent)])
-    #         import ipdb;ipdb.set_trace()
-    #     prev = parents_max
-
-    # return bk.drop(columns=['par_set', 'mult'])
-
+    import ipdb;ipdb.set_trace()

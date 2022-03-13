@@ -17,10 +17,12 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
     # Fetch and format breakpoint data
     breakpoint_data = pd.concat([
         pd.DataFrame({attr: graph.es[attr] for attr in graph.es.attributes()})
-        for graph in graphs
+        for graph in graphs.values()
     ])
-    breakpoint_data["eid"] = [eid for graph in graphs for eid in graph.es.indices]
-    breakpoint_data = breakpoint_data.groupby(["ref", "start", "end"]).eid.agg(lambda x: ";".join(map(str, x)))
+    breakpoint_data["eid"] = [eid for graph in graphs.values() for eid in graph.es.indices]
+    breakpoint_data = breakpoint_data.groupby(["ref", "start", "end"]).eid.agg(
+        lambda x: ";".join(map(str, x))
+    )
 
     #===== Assign bin ids ====#
     bk_fasta = subset_fasta(fasta, breakpoint_data, min_len=min_overlap, outprefix=f"{outdir}/breakpoints")
@@ -33,13 +35,13 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
         for vertex in component:
             (ref, _, _, eids) = vertices_array[vertex].split("|")
             for eid in eids.split(";"):
-                bins[(ref, eid)] = i
-    
+                bins[(ref, int(eid))] = i
+
     bins = pd.Series(bins, name="bin").rename_axis(index=["ref","eid"]).sort_index()
 
-    for graph in graphs:
-        ref = graph.vs["ref"][0]
-        graph.es["bk_id"] = bins.loc[ref].to_numpy()
+    for (ref, graph) in graphs.items():
+        if ref in bins.index.get_level_values("ref"):
+            graph.es["bk_id"] = bins.loc[ref].to_numpy()
 
 def handle_missing_data(genomes, coverages, min_id=0.9, threads=1, outdir=None):
     """

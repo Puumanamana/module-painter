@@ -55,7 +55,8 @@ def main():
         print(c)
         print(TRUTH.get(c.ref))
 
-    overlap_graphs = [coverage.get_overlap_graph(min_overlap=50) for coverage in coverages]    
+    overlap_graphs = {cov.ref: cov.get_overlap_graph(min_overlap=50)
+                      for cov in coverages}
     set_breakpoint_ids(overlap_graphs, args.children, outdir=args.output, threads=1)
     
     bk_unique = select_parents(overlap_graphs)
