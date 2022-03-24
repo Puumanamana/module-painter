@@ -12,13 +12,6 @@ import colorcet as cc
 hv.extension('bokeh')
 
 
-def access(L, i):
-    if isinstance(L, list):
-        if i < len(L):
-            return L[i]
-        return None
-    return L
-
 def get_palette(n):
     palette = linear_palette(Turbo256, n)
     palette = np.random.choice(palette, n, replace=False).tolist()
@@ -45,33 +38,36 @@ def custom_cmap():
 def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
-def display_genomes(genomes, clusters=None, norm=True):
+def display_genomes(graphs, clusters=None, norm=True):
 
-    data = pd.concat([
-        genome.to_pandas()
-        for genome in genomes.values()
-    ]).drop(columns="flag").reset_index(drop=True)
+    cols = ["start", "end", "parent", "ref"]
+    data = pd.DataFrame([
+        vals for g in graphs.values()
+        for vals in zip(*[g.vs[col] for col in cols])
+    ], columns=cols)
+
+    genome_sizes = {ref: g.vs["size"][0] for ref, g in graphs.items()}
     
     if norm:
         to_add = []
 
-        for target in data.target.unique():
-            data_t = data[data.target == target].sort_values(by=["start", "end"])
+        for ref in data.ref.unique():
+            data_t = data[data.ref == ref].sort_values(by=["start", "end"])
             last_idx = data_t.index[-1]
-            extra = data_t.end.iloc[-1] - genomes[target].size
+            extra = data_t.end.iloc[-1] - genome_sizes[ref]
 
             if extra > 0:
-                data.loc[last_idx, 'end'] = genomes[target].size
+                data.loc[last_idx, 'end'] = genome_sizes[ref]
                 
                 to_add.append((0, extra,
                                data_t.loc[last_idx, 'parent'],
-                               data_t.loc[last_idx, 'target']))
+                               data_t.loc[last_idx, 'ref']))
 
         offset = data.index.max() + 1
         for i, entry in enumerate(to_add):
             data.loc[i+offset] = entry
                 
-        data = data.sort_values(by=['target', 'start', 'end']).reset_index(drop=True)
+        data = data.sort_values(by=['ref', 'start', 'end']).reset_index(drop=True)
 
     hover = HoverTool(tooltips=[('Parent', '@parent')])
     
@@ -81,7 +77,7 @@ def display_genomes(genomes, clusters=None, norm=True):
      )
 
     plot_opts = dict(
-        width=700, height=50*data.target.nunique(),
+        width=700, height=50*data.ref.nunique(),
         xlabel='Position', ylabel='Phage',
         gridstyle=dict(ygrid_line_color='gray', xgrid_line_alpha=0, ygrid_line_dash=[4, 4]),
         show_grid=True,
@@ -91,44 +87,39 @@ def display_genomes(genomes, clusters=None, norm=True):
         legend_opts=legend_opts,
     )
 
-    # cmap = {}
-    # i = 0
     cmap = custom_cmap()
     
     for parent in data.parent.unique():
         if 'NA' in parent:
             cmap[parent] = 'gray'
-        # else:
-        #     cmap[parent] = cc.glasbey_light[i]
-        #     i += 1
 
     subplots = []
 
     for cluster in clusters:
-        data_c = data[data.target.isin(cluster)]
-        data_c['target_loc'] = pd.Categorical(data_c.target).codes
+        data_c = data[data.ref.isin(cluster)].copy()
+        data_c['ref_loc'] = pd.Categorical(data_c.ref).codes
 
         parents_all = data_c.parent.unique()
        
         subplot_layer = []
 
         for i, s in enumerate(sorted(data_c.parent.unique())):
-            data_c_s = data_c[data_c.parent==s]
+            data_c_s = data_c[data_c.parent==s].copy()
 
             # Add an offset to better see breakpoint overlap
-            data_c_s.target_loc = data_c_s.target_loc + 0.05*i
+            data_c_s.ref_loc = data_c_s.ref_loc + 0.05*i
             
             subplot_layer.append(
                 hv.Segments(
-                    data_c_s, ['start', 'target_loc', 'end', 'target_loc'], label=s
+                    data_c_s, ['start', 'ref_loc', 'end', 'ref_loc'], label=s
                 )
                 .opts(line_width=15, color=cmap[s],
                       tools=[hover],
                       default_tools=["box_zoom", "reset"])
             )
 
-        yaxis_pos = range(data_c.target.nunique())
-        yaxis_ticks = data_c.target.unique()
+        yaxis_pos = range(data_c.ref.nunique())
+        yaxis_ticks = data_c.ref.unique()
         
         overlay = (
             hv.Overlay(subplot_layer)
@@ -138,6 +129,6 @@ def display_genomes(genomes, clusters=None, norm=True):
 
         subplots.append(overlay)
         
-    seg = hv.Layout(subplots).opts(shared_axes=True).cols(2)
+    seg = hv.Layout(subplots).opts(shared_axes=True).cols(1)
 
     hv.save(seg, '/tmp/cedric/modular_painting_tests/paintings.html')

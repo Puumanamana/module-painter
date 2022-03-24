@@ -21,7 +21,6 @@ BLAST_HEADER = ALN_HEADER + ["bitscore", "pident"]
 
 
 def align(parents, children, algo='blastn', output=None, min_pident=.9, **aln_params):
-    print(f"Initial alignment with {algo}")
     if "blast" in algo.lower():
         aln = run_blastn(parents, children, output, **aln_params)
     else:
@@ -76,7 +75,7 @@ def run_blastn(parents, children, output=None, **blast_filter_prms):
     return aln
 
 def run_minimap(parents, children,
-                k=15, r=150, s=100, z=100, N=50, U=100, c=True, threads=10):
+                r=50, s=100, z=100, N=50, threads=10):
     """
     Minimap2 parameters used here:
     -s INT	
@@ -107,15 +106,13 @@ def run_minimap(parents, children,
       in earlier versions of minimap2.
     """
     cmd = ["minimap2", "-", parents,
+           "-c",
            "--no-long-join",
-           "-k", k, 
            "-s", s, "-z", f"{z},{z}",
            "-N", N,
-           "-M", 0.01,
            "-r", r,
            "-n", 2,
-           "-U", U,
-           "-t", threads] + ["-c"]*c
+           "-t", threads]
 
     alns = []
     
@@ -131,7 +128,7 @@ def run_minimap(parents, children,
                           usecols=range(len(PAF_HEADER)), names=PAF_HEADER)
         aln['pident'] = aln.nident / aln.length
 
-        alns.append(aln[aln.mapq>30])
+        alns.append(aln)
 
     alns = pd.concat(alns)
     
@@ -172,7 +169,7 @@ def align_gaps(hits, seq_data, min_gap=10, max_gap=1e3, min_size_ratio=0.8, min_
         gaps = [gap_end_q-gap_start_q, gap_end_s-gap_start_s]
         gap_ratio = gaps[0] / gaps[1] # what matters is that the query is longer than the reference
 
-        if gaps[0] >= 0 and -min_gap <= gaps[1] <= min_gap: # insertion on the parent, but not the child
+        if gaps[0] >= 0 and gaps[1] <= min_gap: # insertion on the parent, but not the child
             scores[i] = 1.1
 
         # if the gaps have the same size of reference and query, we check the identity
@@ -191,18 +188,9 @@ def align_gaps(hits, seq_data, min_gap=10, max_gap=1e3, min_size_ratio=0.8, min_
     hits["gap_score"] = scores
     hits["merge_with_next"] = scores > min_seq_id
 
-    # if sacc == "a" and qacc in {"B", "G"}:
+    # if sacc == "T" and qacc in "B":
     #     print(sacc, qacc)
     #     print(hits[["qstart", "qend", "qlen", "sstart", "send", "slen", "pident", "gap_score", "mapq"]])
-    #     (gap_start_q, gap_end_q, gap_start_s, gap_end_s) = hits[gap_cols].values[1]
-    #     gap_ratio = gaps[0] / gaps[1]
-    #     print(gap_ratio)
-    #     gap_q = wrapping_substr(qseq, gap_start_q, gap_end_q)
-    #     gap_s = wrapping_substr(sseq, gap_start_s, gap_end_s)
-
-    #     aln = aligner.align(gap_q, gap_s)
-    #     # open("test.afa", "w").write(str(aln[0]))
-    #     print(aln.score/len(gap_s))
     #     import ipdb;ipdb.set_trace()
         
     hits = merge_hits(hits)
@@ -220,12 +208,19 @@ def get_next_hit(starts, size):
 
 def merge_hits(hits):
     indices = hits.index
-    
+
     for i, merge in enumerate(hits.merge_with_next):
         if merge:
             current_idx = indices[i]
-            next_idx = indices[(i+1) % len(indices)]
+            next_idx = indices[(i+1) % len(hits)]
 
+            if (i+1) == len(indices): # wrapping condition
+                if hits.merge_with_next.all():
+                    next_idx = hits.index[0]
+                else:
+                    next_idx = hits.index[~hits.merge_with_next][0]
+
+            # left-extend next interval's start
             for which in ["q", "s"]:
                 field = f"{which}start"
                 hits.loc[next_idx, field] = hits.loc[current_idx, field]

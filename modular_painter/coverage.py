@@ -44,7 +44,10 @@ class Coverage:
         Iter over arc from {parent}. Assumes self.arcs is (start, end) sorted.
         """
         arcs = [arc for arc in self.arcs if not arc.flagged and parent in arc.meta]
-        return iter([arcs[-1]] + arcs)
+        if len(arcs) > 1:
+            arcs = [arcs[-1]] + arcs
+
+        return iter(arcs)
 
     def __repr__(self, subset=None):
         if isinstance(subset, str):
@@ -134,6 +137,9 @@ class Coverage:
         '''
         Change intervals boundaries to make them similar
         '''
+        if len(self) < 2:
+            return
+        
         arcs = list(self.iter_arcs(wrap=False))
         boundaries = np.array([[getattr(arc, attr) for attr in attrs] for arc in arcs])
 
@@ -192,11 +198,14 @@ class Coverage:
         """
         for parent in self.get_all_parents():
             arcs = self.iter_arcs_for_parent(parent)
-            last_arc = next(arcs)
+            try:
+                last_arc = next(arcs)
+            except StopIteration:
+                return
             for arc in arcs:
                 if arc.flagged:
                     continue
-                if last_arc.is_embedded(arc, strict=False):
+                if last_arc.is_embedded(arc, strict=True):
                     last_arc.flag()
                 else:
                     last_arc.try_fuse_with(arc, max_extend_dist)
@@ -363,14 +372,14 @@ class Coverage:
         return df
 
     def get_overlap_graph(self, min_overlap=10):
-        g = igraph.Graph()
+        g = igraph.Graph(directed=True)
 
         # add vertices
         for i, arc in enumerate(self.iter_arcs(wrap=False)):
             for meta in arc.meta:
                 uid = f"{self.ref}.{meta}.{arc.start}-{arc.end}"
                 g.add_vertex(name=uid, parent=meta, order=i, ref=self.ref,
-                             start=arc.start, end=arc.end)
+                             size=self.size, start=arc.start, end=arc.end)
 
         if len(self) == 1:
             return g

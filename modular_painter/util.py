@@ -46,8 +46,9 @@ def build_homology_graph(fasta, min_id=0.9, verbose=0, threads=1):
     (vertices, edges) = (set(), set())
 
     weights = {}
-    
-    print(f"Building minimap2 graph for {fasta}")
+
+    if verbose:
+        print(f"Building minimap2 graph for {fasta}")
     for name, seq, _ in mappy.fastx_read(str(fasta)):
         vertices.add(name)
 

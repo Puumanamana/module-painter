@@ -43,7 +43,7 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
         if ref in bins.index.get_level_values("ref"):
             graph.es["bk_id"] = bins.loc[ref].to_numpy()
 
-def handle_missing_data(genomes, coverages, min_id=0.9, threads=1, outdir=None):
+def map_missing_parents(genomes, coverages, min_id=0.9, threads=1, outdir=None):
     """
     Check if the missing data is approximately the same in different genomes
     """

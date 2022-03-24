@@ -1,18 +1,22 @@
 import random
-from itertools import combinations, groupby
+from itertools import combinations
+
 import pandas as pd
 import numpy as np
 
 random.seed(42)
+
+def iter_prev_next(l):
+    return zip(l, l[1:] + [l[0]])
 
 def get_breakpoints(graphs):
     breakpoints = []
 
     for ref, graph in graphs.items():
         for e in graph.es:
-            breakpoints.append([e.index, ref, e["bk_id"], e["parents"]])
+            breakpoints.append([ref, e["bk_id"], e["parents"]])
 
-    breakpoints = pd.DataFrame(breakpoints, columns=["eid", "ref", "bk_id", "parents"])
+    breakpoints = pd.DataFrame(breakpoints, columns=["ref", "bk_id", "parents"])
     breakpoints["mult"] = breakpoints.duplicated(subset=["ref", "bk_id"], keep=False)
 
     return breakpoints
@@ -38,12 +42,10 @@ def find_recombinations(bk):
 def filter_recombinations(rc, bk):
     # Compute recombinations metrics
     scores = rc[rc.mult].groupby(["parents", "bk_ids"]).ref.agg(
-        rc_abund=len,
         rc_prev=lambda x: len(set(x))
     )
     # Filter based on: 1) prevalence 2) abundance
     scores = scores[scores.rc_prev==scores.rc_prev.max()]
-    scores = scores[scores.rc_abund==scores.rc_abund.max()]
 
     # 3) on each breakpoint
     bk_abund = bk.groupby(["parents", "bk_id"]).ref.agg(len).to_dict()
@@ -57,11 +59,10 @@ def filter_recombinations(rc, bk):
 
 def filter_breakpoints(bk):
     scores = bk[bk.mult].groupby(["parents", "bk_id"]).ref.agg(
-        bk_abund=len,
         bk_prev=lambda x: len(set(x))
     )
-    # Filter based on abundance
-    scores = scores[scores.bk_abund==scores.bk_abund.max()]
+    # Filter based on prevalence
+    scores = scores[scores.bk_prev==scores.bk_prev.max()]
 
     return scores
 
@@ -81,6 +82,7 @@ def select_by_recombinations(graphs):
     - Iteratively choose parents with the most total recombinations
     - Solve equalities by choosing the parents that cover the most phages
     """
+    prev = ""
     while True:
         bk = get_breakpoints(graphs)
         rc = find_recombinations(bk)
@@ -96,15 +98,22 @@ def select_by_recombinations(graphs):
         # Best recomb
         (parents, bk_ids) = scores.index[0]
 
+        # check for infinite loop
+        if prev == scores.index[0]:
+            print("Infinite loop...")
+            import ipdb;ipdb.set_trace()
+        prev = scores.index[0]
+        
         # Remove from graph
         for ref, graph in graphs.items():
             remove_alternative_breakpoints(graph, set(bk_ids), parents)
         
-        print(f"Selection {parents} {set(bk_ids)}. Remaining: {rc.mult.sum()}")
+        # print(f"Selection {parents} {set(bk_ids)}. Remaining: {rc.mult.sum()}")
 
 def select_by_breakpoints(graphs):
     """
     """
+    prev = ""
     while True:
         bk = get_breakpoints(graphs)
 
@@ -119,11 +128,17 @@ def select_by_breakpoints(graphs):
         # Best recomb
         (parents, bk_id) = scores.index[0]
 
+        # check for infinite loop
+        if prev == scores.index[0]:
+            print("Infinite loop...")
+            import ipdb;ipdb.set_trace()
+        prev = scores.index[0]
+        
         # Remove from graph
         for ref, graph in graphs.items():
             remove_alternative_breakpoints(graph, {bk_id}, parents)
         
-        print(f"Selection {parents} {bk_id}. Remaining: {bk.mult.sum()}")
+        # print(f"Selection {parents} {bk_id}. Remaining: {bk.mult.sum()}")
             
 def remove_alternative_breakpoints(graph, bk_, parents):
     if len(graph.vs) < 2: # no breakpoints
@@ -141,10 +156,4 @@ def remove_alternative_breakpoints(graph, bk_, parents):
         for vi in e.tuple
         if not graph.vs["parent"][vi] in parents
     )
-    
-def select_parents(graphs):
 
-    select_by_recombinations(graphs)
-    select_by_breakpoints(graphs)
-
-    import ipdb;ipdb.set_trace()
