@@ -1,10 +1,23 @@
 class Arc:
-    def __init__(self, start, end, size, meta="X"):
+    def __init__(self, start, end, size, meta="X", **attrs):
         self.size = size
-        self.start = start
-        self.end = end
         self.meta = meta
         self.flagged = False
+        self.set_bounds(start, end)
+
+        for key, val in attrs.items():
+            setattr(self, key, val)
+        
+
+    def set_bounds(self, start, end):
+        if end <= start:
+            raise ValueError(f"{self.meta}: {start} >= {end}")
+        if end-start >= self.size:
+            self.start = 0
+            self.end = self.size - 1
+        else:
+            self.start = start
+            self.end = end
 
     def __repr__(self):
         return "{}: ({}, {}), size={} (flagged: {})".format(
@@ -35,39 +48,47 @@ class Arc:
         return (self.start, self.end)
 
     def split_at_end(self):
-        arc_1 = Arc(self.start, self.size-1, self.size)
-        arc_2 = Arc(0, self.end % self.size, self.size)
+        if self.end < self.size:
+            assert ValueError("Arc does not wrap around, cannot split at end")
+        arc_1 = Arc(self.start, self.size-1, self.size, meta=self.meta)
+        arc_2 = Arc(0, self.end % self.size, self.size, meta=self.meta)
 
         return (arc_1, arc_2)
 
-    def is_embedded(self, other, strict=True):
+    def is_embedded(self, other, strict=False):
         """
         is self is embedded in other?
         """
         # Special case: equal intervals
         if strict and self.bounds() == other.bounds():
             return False
-        # General case: no looping around or both looping around
-        if other.start <= self.start <= self.end <= other.end:
-            return True
-        # "other" loops around
-        if other.end >= other.size and 0 <= self.start <= self.end <= other.end-self.size:
-            return True
-        # if only "self" loops around, it's not embedded
-        return False
+        # self loops around
+        if self.end >= self.size:
+            # split interval in 2
+            (arc1, arc2) = self.split_at_end()
+            return arc1.is_embedded(other) and arc2.is_embedded(other)
+        # other loops around
+        if other.end >= other.size:
+            (arc1, arc2) = other.split_at_end()
+            return self.is_embedded(arc1) or self.is_embedded(arc2)
+        # General case: no looping around
+        return other.start <= self.start <= self.end <= other.end
 
     def dist_to_next(self, other):
         """
-        assymmetric distance between two intervals.
+        Distance from self to other (note: assymmetric)
+        - If other starts before self, then we wrap around
+        - If the intervals intersect, returns the overlap 
+        (negative distance)
         """
-        # case 1: both intervals wrap around
-        if self.end >= self.size and other.end >= self.size:
-            return 0
-        # case 2: self wraps around
-        if other.start < self.start:
-            return max(0, other.start + (self.size-self.end))
+        # case 1: self wraps around, not other
+        if other.end < self.size <= self.end:
+            return other.start - (self.end % self.size) - 1
+        # case 2: other precedes self, but self does not wrap
+        if other.start < self.start < self.end:
+            return self.size - self.end + other.start - 1
         # general case
-        return max(0, other.start - self.end)
+        return other.start - self.end - 1
 
     def try_merge_with(self, other):
         """
@@ -79,18 +100,19 @@ class Arc:
             self.flag()
             other.meta |= self.meta
 
-    def try_fuse_with(self, other, max_dist, dist=None):
+    def try_fuse_with(self, other, max_dist=0, dist=None, force=False):
         """
         Extend self with other if they share parents
+        Return 1 if fused else 0
         """
         shared_meta = self.meta.intersection(other.meta)
 
         if not shared_meta:
-            return
+            return 0
         if dist is None:
             dist = self.dist_to_next(other)
-        if dist > max_dist:
-            return
+        if not force and dist > max_dist:
+            return 0
         self.flag()
         other.unflag()
         other.meta = shared_meta
@@ -100,6 +122,7 @@ class Arc:
         else: # Loop: ..2---2...1--1..
             other.start = self.start
             other.end += self.size
+        return 1
 
     def try_extend_end_with(self, other, max_dist, dist=None):
         """
@@ -114,7 +137,7 @@ class Arc:
             return
 
         if self.start <= other.start: # General case: 1--1...2--2
-            left_extend = dist // 2            
+            left_extend = dist // 2
         else: # Loop: ..2---2...1--1..
             # We prioritize extending towards 0
             left_extend = min(other.start, dist)

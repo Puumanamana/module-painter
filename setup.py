@@ -16,5 +16,8 @@ setup(name='modular_painter',
           'Biopython',
           'argparse',
           'bokeh>=1.4',
+          'holoviews',
+          'scikit-learn',
+          'igraph',
           'mappy'
       ])

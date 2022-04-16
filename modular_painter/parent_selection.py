@@ -6,8 +6,26 @@ import numpy as np
 
 random.seed(42)
 
+
 def iter_prev_next(l):
     return zip(l, l[1:] + [l[0]])
+
+def is_interfering(parents, freqs):
+    """
+    Interferences happen when we pick a breakpoint:
+    - for which the parent pair appear an odd number of times
+    on the reference
+    - there are other parent pairs at the same location that 
+    appear an even number of times
+    """
+    if len(parents) == 1:
+        return False
+    (ref, _) = parents.name
+    freqs_for_bk = freqs.loc[ref].loc[parents].values
+    is_rc = freqs_for_bk > 1
+    is_odd = freqs_for_bk % 2 == 1
+
+    return any(~is_odd) & is_odd & is_rc
 
 def get_breakpoints(graphs):
     breakpoints = []
@@ -18,6 +36,13 @@ def get_breakpoints(graphs):
 
     breakpoints = pd.DataFrame(breakpoints, columns=["ref", "bk_id", "parents"])
     breakpoints["mult"] = breakpoints.duplicated(subset=["ref", "bk_id"], keep=False)
+
+    # Conditions for interference
+    # the bk appears >1 time on the same reference with another parent pair with even number of breakpoints
+    # 1) compute freqs = Counter[(ref, parent_pair) for ...]
+    # 2) groupby(["ref", "bk_id"]).parents -> agg(lambda x: freqs[x]))
+    freqs_per_ref = breakpoints[["ref", "parents"]].value_counts()
+    breakpoints["interfere"] = breakpoints.groupby(["ref", "bk_id"]).parents.transform(is_interfering, freqs_per_ref)
 
     return breakpoints
 
@@ -36,16 +61,22 @@ def find_recombinations(bk):
     mult = bk.loc[bk.mult].set_index(["ref", "bk_id"]).sort_index().index
     rc["mult"] = [any((ref, bk_id) in mult for bk_id in bk_ids)
                   for (ref, bk_ids) in rc[['ref', 'bk_ids']].values]
-    
+
+    interfere = bk.loc[bk.interfere].set_index(["ref", "bk_id"]).sort_index().index
+    rc["interference"] = [sum((ref, bk_id) in interfere for bk_id in bk_ids)
+                         for (ref, bk_ids) in rc[['ref', 'bk_ids']].values]
     return rc
 
 def filter_recombinations(rc, bk):
     # Compute recombinations metrics
-    scores = rc[rc.mult].groupby(["parents", "bk_ids"]).ref.agg(
-        rc_prev=lambda x: len(set(x))
-    )
-    # Filter based on: 1) prevalence 2) abundance
+    scores = rc[rc.mult].groupby(["parents", "bk_ids"]).agg(dict(
+        ref=lambda x: len(set(x)),
+        interference=sum
+    )).rename(columns=dict(ref="rc_prev"))
+
+    # Filter based on: 1) prevalence 2) minimum interference
     scores = scores[scores.rc_prev==scores.rc_prev.max()]
+    scores = scores[scores.interference==scores.interference.min()]
 
     # 3) on each breakpoint
     bk_abund = bk.groupby(["parents", "bk_id"]).ref.agg(len).to_dict()
@@ -53,7 +84,7 @@ def filter_recombinations(rc, bk):
                           for (parents, bk_ids) in scores.index]
     # Filter based on breakpoints
     # We pick the smallest bk abundance to not disrupt other potential recombinations
-    scores = scores[scores.bk_abund==scores.bk_abund.min()]
+    scores = scores[scores.bk_abund==scores.bk_abund.max()]
 
     return scores
 
@@ -98,7 +129,7 @@ def select_by_recombinations(graphs):
         # Best recomb
         (parents, bk_ids) = scores.index[0]
 
-        # check for infinite loop
+        # Check for infinite loop
         if prev == scores.index[0]:
             print("Infinite loop...")
             import ipdb;ipdb.set_trace()
@@ -141,7 +172,7 @@ def select_by_breakpoints(graphs):
         # print(f"Selection {parents} {bk_id}. Remaining: {bk.mult.sum()}")
             
 def remove_alternative_breakpoints(graph, bk_, parents):
-    if len(graph.vs) < 2: # no breakpoints
+    if not graph.es: # no breakpoints
         return
 
     # make sure graph has all breakpoints in bk_
@@ -156,4 +187,3 @@ def remove_alternative_breakpoints(graph, bk_, parents):
         for vi in e.tuple
         if not graph.vs["parent"][vi] in parents
     )
-

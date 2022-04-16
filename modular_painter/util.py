@@ -39,11 +39,12 @@ def subset_fasta(filename, subset_df, min_len=0, outprefix="/tmp"):
 
     return output
 
-def build_homology_graph(fasta, min_id=0.9, verbose=0, threads=1):
+def build_homology_graph(fasta, min_id=0.9, min_size_ratio=0, verbose=0, threads=1):
     db = mappy.Aligner(str(fasta), n_threads=threads)  # build index
     if not db: raise Exception("ERROR: failed to load/build index")
 
-    (vertices, edges) = (set(), set())
+    vertices = set()
+    edges = {}
 
     weights = {}
 
@@ -56,21 +57,26 @@ def build_homology_graph(fasta, min_id=0.9, verbose=0, threads=1):
             if name == hit.ctg:
                 continue
 
-            pident = hit.mlen/min([hit.ctg_len, len(seq)])
+            lengths = [hit.ctg_len, len(seq)]
+            (min_len, max_len) = min(lengths), max(lengths)
+            pident = hit.mlen/hit.blen
 
             if verbose > 0:
                 print("{} vs {} (id={:.1%}, mapq={})".format(
                     name, hit.ctg, pident, hit.mapq,
                     hit.r_st, hit.r_en, hit.q_st, hit.q_en))
 
-            if pident > min_id:
+            if pident > min_id and min_len/max_len > min_size_ratio:
                 edge = tuple(sorted((name, hit.ctg)))
-                edges.add(edge)
+                edges[edge] = dict(pident=pident, matches=hit.mlen, length=hit.blen, qlen=len(seq), rlen=hit.ctg_len)
                 vertices |= {name, hit.ctg}
 
     graph = igraph.Graph()
     graph.add_vertices(sorted(vertices))
-    graph.add_edges(sorted(edges))
+    graph.add_edges(edges.keys())
+    for attr in ["pident", "matches", "length", "qlen", "rlen"]:
+        graph.es[attr] = [v[attr] for v in edges.values()]
+    graph.es["name"] = ["<->".join(graph.vs["name"][vi] for vi in e.tuple) for e in graph.es]
 
     return graph
 
@@ -81,7 +87,28 @@ def wrapping_substr(s, i, j):
         return s[i:] + s[:j]
     if 0 < i < len(s) < j:
         return s[i:] + s[:(j % len(s))]
-    # if 0 < j < len(s) < i:
-    #     return s[(i % len(s)):j]
-        
+    if 0 < j < len(s) < i:
+        return s[(i % len(s)):j]
     raise ValueError(f"String subset not defined for start={i} and end={j} (L={len(s)})")
+
+def concatenate_fasta(*fa, outdir="./", resume=False, rename=False, prefix="seq", min_length=1000):
+    if not rename and len(fa) == 1:
+        return fa[0]
+
+    outprefix = "-".join(sorted(Path(f).stem for f in fa))
+    output = Path(outdir, outprefix).with_suffix(".fasta")
+
+    if resume and output.is_file():
+        return output
+
+    count = 0
+    with open(output, "w") as writer:
+        for f in fa:
+            with open(f) as reader:
+                for (title, seq) in SimpleFastaParser(reader):
+                    if len(seq) > min_length:
+                        if rename:
+                            title = f"{prefix}_{count}"
+                        writer.write(f">{title}\n{seq}\n")
+                        count += 1
+    return output

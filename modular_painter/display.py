@@ -39,14 +39,16 @@ def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
 def display_genomes(graphs, clusters=None, norm=True):
-
+    graphs = [graphs[ref] for cluster in clusters for ref in cluster]
+    
     cols = ["start", "end", "parent", "ref"]
+
     data = pd.DataFrame([
-        vals for g in graphs.values()
+        vals for g in graphs
         for vals in zip(*[g.vs[col] for col in cols])
     ], columns=cols)
 
-    genome_sizes = {ref: g.vs["size"][0] for ref, g in graphs.items()}
+    genome_sizes = {g["ref"]: g["size"] for g in graphs}
     
     if norm:
         to_add = []
@@ -77,7 +79,7 @@ def display_genomes(graphs, clusters=None, norm=True):
      )
 
     plot_opts = dict(
-        width=700, height=50*data.ref.nunique(),
+        width=700, height=max(50*data.ref.nunique(), 200),
         xlabel='Position', ylabel='Phage',
         gridstyle=dict(ygrid_line_color='gray', xgrid_line_alpha=0, ygrid_line_dash=[4, 4]),
         show_grid=True,
@@ -92,28 +94,33 @@ def display_genomes(graphs, clusters=None, norm=True):
     for parent in data.parent.unique():
         if 'NA' in parent:
             cmap[parent] = 'gray'
+    remaining_parents = set(data.parent.unique()).difference(cmap.keys())
+    colors = get_palette(len(remaining_parents))
+    cmap.update(dict(zip(remaining_parents, colors)))
 
     subplots = []
 
     for cluster in clusters:
+        # if len(cluster) == 1:
+        #     continue
         data_c = data[data.ref.isin(cluster)].copy()
         data_c['ref_loc'] = pd.Categorical(data_c.ref).codes
 
-        parents_all = data_c.parent.unique()
+        parents_all = {p for p in data_c.parent if "NA" not in p}
        
         subplot_layer = []
 
-        for i, s in enumerate(sorted(data_c.parent.unique())):
-            data_c_s = data_c[data_c.parent==s].copy()
+        for i, p in enumerate(parents_all):
+            data_c_p = data_c[data_c.parent==p].copy()
 
             # Add an offset to better see breakpoint overlap
-            data_c_s.ref_loc = data_c_s.ref_loc + 0.05*i
+            data_c_p.ref_loc = data_c_p.ref_loc + 0.05*i
             
             subplot_layer.append(
                 hv.Segments(
-                    data_c_s, ['start', 'ref_loc', 'end', 'ref_loc'], label=s
+                    data_c_p, ['start', 'ref_loc', 'end', 'ref_loc'], label=p
                 )
-                .opts(line_width=15, color=cmap[s],
+                .opts(line_width=15, color=cmap[p],
                       tools=[hover],
                       default_tools=["box_zoom", "reset"])
             )
