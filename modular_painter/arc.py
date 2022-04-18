@@ -10,8 +10,8 @@ class Arc:
         
 
     def set_bounds(self, start, end):
-        if end <= start:
-            raise ValueError(f"{self.meta}: {start} >= {end}")
+        if end < start:
+            raise ValueError(f"{self.meta}: {end} < {start}")
         if end-start >= self.size:
             self.start = 0
             self.end = self.size - 1

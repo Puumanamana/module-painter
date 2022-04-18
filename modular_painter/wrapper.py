@@ -108,6 +108,12 @@ def blastn(query, ref, outdir=None, **blast_opt):
     aln.pident = aln.pident/100.
     aln.sstrand = aln.sstrand.replace(dict(plus='+', minus='-'))
 
+    # swap sstart and send if strand="-" so that sstart < send
+    reverse = aln.sstrand == "-"
+    sends = aln.loc[reverse, "send"]
+    aln.loc[reverse, "send"] = aln.loc[reverse, "sstart"]
+    aln.loc[reverse, "sstart"] = sends
+
     # Fix start/end to be 0-indexed
     for attr in ["qstart", "qend", "sstart", "send"]:
         aln[attr] -= 1

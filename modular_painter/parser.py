@@ -10,14 +10,14 @@ def parse_args():
     Command line parser for ModularPainter
     """
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-d", "--dataset", type=str, default="delong_hybrid",
+    parser.add_argument("-d", "--dataset", type=str, default="delong_illumina",
                         help="Test dataset choice",
                         choices=["fromageries", "delong_hybrid", "delong_illumina"])
     parser.add_argument("-p", "--parents", type=str, nargs="+",
                         help="Parent sequences (fasta)")
     parser.add_argument("-c", "--children", type=str, nargs="+",
                         help="Children sequences (fasta)")
-    parser.add_argument("--aligner", type=str, default="minimap2", choices=["blastn", "minimap2"],
+    parser.add_argument("--aligner", type=str, default="blastn", choices=["blastn", "minimap2"],
                         help="Alignment tool")    
     parser.add_argument("--outdir", type=str, default="/tmp/cedric/modular_painting_tests",
                         help="Output folder")
