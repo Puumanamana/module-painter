@@ -62,11 +62,11 @@ def main():
                             **ALN_PARAMS["minimap2"])
         alns.to_csv(aln_file)
 
-    logging.info(f"{sum(alns.pident<args.min_id):,} alignments discard (pident<{args.min_id:.1%})")
+    logging.info(f"{sum(alns.pident<args.min_id):,} alignments discarded (pident<{args.min_id:.1%})")
     alns = alns[alns.pident >= args.min_id]
     n_children = alns.sacc.nunique()
     alns = alns.groupby("sacc").filter(lambda x: x.qacc.nunique() > 1)
-    logging.info(f"{n_children-alns.sacc.nunique():,} children were discarded (< 2 parents found)")
+    logging.info(f"{n_children-alns.sacc.nunique():,} children discarded (< 2 parents found)")
 
     if alns.empty:
         logging.error(f"No alignments found with {args.aligner} between parents and children")

@@ -57,7 +57,7 @@ class Coverage:
         else:
             arcs = [arc for arc in self.arcs if not arc.flagged]
 
-        if wrap:
+        if wrap and len(arcs) > 1:
             max_end = max(arc.end for arc in arcs)
             last_arc = next(arc for arc in arcs if arc.end == max_end)            
             arcs = [last_arc] + arcs
@@ -157,9 +157,8 @@ class Coverage:
         - Fuse consecutive modules if distance <= min_module_size
         - if dist > min_module_size, check pident with N-W
         Arcs need to be (start, end) sorted
-        (i) 
         """
-        aligner = aligner = Align.PairwiseAligner(mode="global", open_gap_score=-0.1)
+        aligner = Align.PairwiseAligner(mode="global", open_gap_score=-0.1)
 
         for parent in sorted(self.get_all_parents()):
             arcs = self.iter_arcs(wrap=True, parent=parent)

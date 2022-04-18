@@ -10,7 +10,7 @@ def parse_args():
     Command line parser for ModularPainter
     """
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-d", "--dataset", type=str, default="fromageries",
+    parser.add_argument("-d", "--dataset", type=str, default="delong_hybrid",
                         help="Test dataset choice",
                         choices=["fromageries", "delong_hybrid", "delong_illumina"])
     parser.add_argument("-p", "--parents", type=str, nargs="+",

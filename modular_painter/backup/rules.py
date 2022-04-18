@@ -117,16 +117,17 @@ def compute_gaps(intervals):
 
     return intervals.sstart - prev_end
     
-def merge_modules(intervals_df, max_dist=None):
+def merge_modules(intervals, meta, max_dist=None):
     """
     - Removes embedded intervals
     - Extend consecutive intervals if dist <= max_dist
     - Align with NW if dist > max_dist
     intervals_df: (id, qstart, qend, qlen, sstart, send, slen) list or array
+    meta: 
     max_dist: int
     """
     if len(interval_df) <= 2:
-        return interval_df[cols]
+        return # TO DO
 
     intervals = interval_df[cols].to_numpy()
     
@@ -158,3 +159,5 @@ def merge_modules(intervals_df, max_dist=None):
 
     return results
 
+
+    
