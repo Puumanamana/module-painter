@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 import numpy as np
-import igraph
+from igraph import Graph
 import mappy
 
 from Bio import SeqIO
@@ -68,14 +68,15 @@ def build_homology_graph(fasta, min_id=0.9, min_size_ratio=0, verbose=0, threads
 
             if pident > min_id and min_len/max_len > min_size_ratio:
                 edge = tuple(sorted((name, hit.ctg)))
-                edges[edge] = dict(pident=pident, matches=hit.mlen, length=hit.blen, qlen=len(seq), rlen=hit.ctg_len)
+                edges[edge] = dict(pident=pident, matches=hit.mlen, length=hit.blen, qlen=len(seq), rlen=hit.ctg_len, qseq=seq)
                 vertices |= {name, hit.ctg}
 
-    graph = igraph.Graph()
+    graph = Graph()
     graph.add_vertices(sorted(vertices))
     graph.add_edges(edges.keys())
-    for attr in ["pident", "matches", "length", "qlen", "rlen"]:
-        graph.es[attr] = [v[attr] for v in edges.values()]
+    if edges:
+        for attr in edges[edge]:
+            graph.es[attr] = [v[attr] for v in edges.values()]
     graph.es["name"] = ["<->".join(graph.vs["name"][vi] for vi in e.tuple) for e in graph.es]
 
     return graph
@@ -96,6 +97,8 @@ def concatenate_fasta(*fa, outdir="./", resume=False, rename=False, prefix="seq"
         return fa[0]
 
     outprefix = "-".join(sorted(Path(f).stem for f in fa))
+    if len(outprefix) > 20:
+        outprefix = outprefix[:20] + "_trunc"
     output = Path(outdir, outprefix).with_suffix(".fasta")
 
     if resume and output.is_file():

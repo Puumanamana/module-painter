@@ -2,13 +2,14 @@ import logging
 from pathlib import Path
 import pandas as pd
 from Bio import SeqIO
+from igraph import Graph
 
 from modular_painter.parser import parse_args
 from modular_painter.util import concatenate_fasta
 from modular_painter.coverage import Coverage
 from modular_painter.wrapper import blastn, minimap2
 from modular_painter.breakpoints import map_missing_parents, set_breakpoint_ids
-from modular_painter.parent_selection import select_by_recombinations, select_by_breakpoints
+from modular_painter.parent_selection import summarize_breakpoints, select_by_recombinations, select_by_breakpoints
 from modular_painter.clustering import cluster_phages
 from modular_painter.display import display_genomes
 
@@ -30,7 +31,7 @@ TRUTH = dict(
 )
 
 ALN_PARAMS = dict(
-    minimap2={"s": 100, "z": "100,100", "N": 50,
+    minimap2={"s": 100, "z": "20,20", "N": 50,
               "no-long-join": True, "c": True, "P": True},
     blastn={"gapopen": 5, "gapextend": 2}
 )
@@ -62,25 +63,30 @@ def main():
                             **ALN_PARAMS["minimap2"])
         alns.to_csv(aln_file)
 
-    logging.info(f"{sum(alns.pident<args.min_id):,} alignments discarded (pident<{args.min_id:.1%})")
+    logging.info(f"{sum(alns.pident>=args.min_id):,} alignments remaining (pident>={args.min_id:.1%})")
     alns = alns[alns.pident >= args.min_id]
-    n_children = alns.sacc.nunique()
-    alns = alns.groupby("sacc").filter(lambda x: x.qacc.nunique() > 1)
-    logging.info(f"{n_children-alns.sacc.nunique():,} children discarded (< 2 parents found)")
+    # For each query, keep hits with sstrand of the best hit
+    sstrands = alns.groupby(["sacc", "qacc"]).apply(lambda df: df.set_index("sstrand").nident.idxmax()).to_dict()
+    alns = alns.groupby(["sacc", "qacc"], group_keys=False).apply(lambda df: df[df.sstrand==sstrands[df.name]])
 
     if alns.empty:
-        logging.error(f"No alignments found with {args.aligner} between parents and children")
+        logging.error(f"No alignments found with more than 2 parents between parents and children")
         return
+
+    n_children = alns.sacc.nunique()
+    alns = alns.groupby("sacc").filter(lambda x: x.qacc.nunique() > 1)
+    logging.info(f"{n_children-alns.sacc.nunique():,} children discarded (<2 parents found)")
 
     seq_data = {seq.id: seq.seq for fasta in populations for seq in SeqIO.parse(fasta, "fasta")}
 
+    logging.info("Applying coverage rules for all children")
     coverages = []
     for child in alns.sacc.unique():
         aln = alns[alns.sacc==child]
         if aln.qacc.nunique() == 1:
             logging.warning(f"Too few parents cover {child}. Skipping")
             continue
-        logging.info(f"Processing {child}")
+        logging.debug(f"Processing {child}")
         if args.use_ground_truth:
             aln = alns[alns.qacc.isin(set(TRUTH[child]))]
 
@@ -89,40 +95,59 @@ def main():
         coverage.sync_boundaries("start", args.arc_eq_diffs)
         coverage.sync_boundaries("end", args.arc_eq_diffs)
         # Fuse intervals from the same parents if they are close
-        coverage.fuse_close_modules(seq_data, args.min_module_size, args.min_nw_id)
+        coverage.fuse_close_modules(seq_data,
+                                    max_dist=args.min_module_size,
+                                    min_size_ratio=0.8,
+                                    min_nw_id=args.min_nw_id)
         # simplify coverage by grouping equal intervals
         coverage.merge_equal_intervals()
         # Remove embedded intervals
         coverage.simplify_embedded()
+        print(coverage)
         # Fill all gaps
         coverage.fill_gaps(args.min_module_size)
+        if len(coverage) < 2:
+            continue
         # Lee and Lee
         coverage.get_minimal_coverage()
-
-        if len(coverage) > 1:
-            coverages.append(coverage)
-
+        coverages.append(coverage)
+    
     if not coverages:
         logging.warning("No shared species between parents and children. Aborting.")
         return
+
+    tmp = {c.ref: c for c in coverages}
 
     logging.info("Mapping missing parents")
     map_missing_parents(populations[1], coverages, outdir=args.outdir, threads=1)
 
     for c in coverages:
         print(c)
-        logging.debug(c.show())
-        logging.debug(TRUTH.get(c.ref))
+        # logging.debug(c.show())
+        # logging.debug(TRUTH.get(c.ref))
 
-    overlap_graphs = {cov.ref: cov.get_overlap_graph(min_overlap=50) for cov in coverages}
-    logging.info("Mapping breakpoints")
-    set_breakpoint_ids(overlap_graphs, populations[1], outdir=args.outdir, threads=1)
+    logging.info(f"Remaining: {[c.ref for c in coverages]}")
+    
+    graph_dir = Path(args.outdir, "overlap_graphs")
+    graph_dir.mkdir(exist_ok=True)
+    graph_paths = {cov.ref: Path(graph_dir, f"{cov.ref}.pickle") for cov in coverages}
 
-    logging.info("Parent selection: by recombinations")
-    select_by_recombinations(overlap_graphs)
-    logging.info("Parent selection: by breakpoint")
-    select_by_breakpoints(overlap_graphs)
+    if args.resume and all(f.is_file() for f in graph_paths.values()):
+        overlap_graphs = [Graph.Read_Pickle(f) for f in graph_paths.values()]
+    else:
+        overlap_graphs = [cov.get_overlap_graph(min_overlap=50) for cov in coverages]
+        logging.info("Mapping breakpoints")
+        set_breakpoint_ids(overlap_graphs, populations[1], outdir=args.outdir, threads=1)
 
+        # summarize_breakpoints(overlap_graphs)
+        logging.info("Parent selection: by recombinations")
+        select_by_recombinations(overlap_graphs)
+        logging.info("Parent selection: by breakpoint")
+        select_by_breakpoints(overlap_graphs)
+
+        for graph in overlap_graphs:
+            graph.write_pickle(graph_paths[graph["ref"]])
+    
     logging.info(f"Clustering (feature: {args.clustering_feature})")
     clusters = cluster_phages(overlap_graphs, gamma=0.5, feature=args.clustering_feature)
     clusters = [c for c in clusters if len(c) > 1]
@@ -131,10 +156,10 @@ def main():
         logging.warning("No species cluster identified.")
         return
 
-    logging.debug([list(c) for c in sorted(clusters, key=lambda x: -len(x))])
+    logging.info([list(c) for c in sorted(clusters, key=lambda x: -len(x))])
 
-    logging.info("Interactive plot")
-    display_genomes(overlap_graphs, clusters=clusters, norm=True)
+    logging.info(f"Interactive plot in {args.outdir}")
+    display_genomes(overlap_graphs, clusters=clusters, norm=True, outdir=args.outdir)
 
 if __name__ == '__main__':
     main()

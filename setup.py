@@ -8,6 +8,7 @@ setup(name='modular_painter',
       packages=find_packages(),
       license='Apache License 2.0',
       zip_safe=False,
+      entry_points={'console_scripts': ['modular-painter=modular_painter.main:main']},
       python_requires='>=3.6',
       test_requires=['pytest', 'pytest-cov'],
       install_requires=[

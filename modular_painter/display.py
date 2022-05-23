@@ -1,3 +1,4 @@
+from pathlib import Path
 from math import pi
 import numpy as np
 import pandas as pd
@@ -38,7 +39,8 @@ def custom_cmap():
 def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
-def display_genomes(graphs, clusters=None, norm=True):
+def display_genomes(graphs, clusters=None, norm=True, outdir=None):
+    graphs = {graph["ref"]: graph for graph in graphs}
     graphs = [graphs[ref] for cluster in clusters for ref in cluster]
     
     cols = ["start", "end", "parent", "ref"]
@@ -138,4 +140,4 @@ def display_genomes(graphs, clusters=None, norm=True):
         
     seg = hv.Layout(subplots).opts(shared_axes=True).cols(1)
 
-    hv.save(seg, '/tmp/cedric/modular_painting_tests/paintings.html')
+    hv.save(seg, Path(outdir, 'paintings.html'))

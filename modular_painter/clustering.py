@@ -10,7 +10,7 @@ def cluster_phages(graphs, gamma=0.75, feature="breakpoints"):
     bk = get_breakpoints(graphs)
 
     recomb_graph = igraph.Graph()
-    recomb_graph.add_vertices(list(graphs.keys()))
+    recomb_graph.add_vertices([graph["ref"] for graph in graphs])
 
     if feature == "breakpoint":
         edges = bk.groupby(["bk_id", "parents"]).ref.agg(list)

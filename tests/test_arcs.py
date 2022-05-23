@@ -6,9 +6,15 @@ def test_len():
 
 def test_eq():
     arc1 = Arc(90, 110, 100, {"A", "C"})
-    arc2 = Arc(90, 110, 100, {"B"})
+    arc2 = Arc(90, 110, 100, {"C", "A"})
 
     assert arc1 == arc2
+
+def test_neq():
+    arc1 = Arc(90, 110, 100, {"A", "C"})
+    arc2 = Arc(90, 110, 100, {"B"})
+
+    assert arc1 != arc2
 
 def test_flag():
     arc = Arc(90, 110, 100, {"A", "C"})
@@ -47,12 +53,48 @@ def test_is_embedded_wrap():
     assert arc2.is_embedded(arc1)
     assert not arc1.is_embedded(arc2)
 
+def test_is_embedded_wrap_full():
+    arc1 = Arc(29, 130, 100)
+    arc2 = Arc(10, 20, 100)
+
+    assert arc2.is_embedded(arc1)
+    
 def test_pos_dist_to_next():
     arc1 = Arc(10, 20, 50)
     arc2 = Arc(30, 40, 50)
 
-    assert arc1.dist_to_next(arc2) == 10
-    assert arc2.dist_to_next(arc1) == 20
+    assert arc1.dist_to_next(arc2) == 9
+    assert arc2.dist_to_next(arc1) == 19
+
+def test_overlap_dist_to_next():
+    arc1 = Arc(10, 20, 50)
+    arc2 = Arc(15, 40, 50)
+
+    assert arc1.dist_to_next(arc2) == -6
+
+def test_self_wrap_dist_to_next():
+    arc1 = Arc(45, 55, 50)
+    arc2 = Arc(10, 40, 50)
+
+    assert arc1.dist_to_next(arc2) == 4
+
+def test_other_wrap_dist_to_next():
+    arc1 = Arc(10, 40, 50)
+    arc2 = Arc(45, 55, 50)
+
+    assert arc1.dist_to_next(arc2) == 4
+
+def test_both_wrap_dist_to_next():
+    arc1 = Arc(30, 55, 50)
+    arc2 = Arc(45, 60, 50)
+
+    assert arc1.dist_to_next(arc2) == -11
+
+def test_both_wrap_overlap_dist_to_next():
+    arc1 = Arc(30, 55, 50)
+    arc2 = Arc(45, 85, 50) # 45 -> 35
+
+    assert arc1.dist_to_next(arc2) == -11
     
 def test_try_merge_equal():
     arc1 = Arc(10, 20, 50, {"A"})
@@ -72,7 +114,7 @@ def test_try_merge_different():
 def test_try_fuse_overlap():
     arc1 = Arc(10, 20, 50, {"A"})
     arc2 = Arc(15, 30, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=5)
+    arc1.try_fuse_with(arc2, max_dist=5, nw=False)
     
     assert arc1.flagged and not arc2.flagged
     assert arc2.meta == {"A"}
@@ -81,7 +123,7 @@ def test_try_fuse_overlap():
 def test_try_fuse_close():
     arc1 = Arc(10, 20, 50, {"A"})
     arc2 = Arc(26, 30, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=10)
+    arc1.try_fuse_with(arc2, max_dist=10, nw=False)
     
     assert arc1.flagged and not arc2.flagged
     assert arc2.meta == {"A"}
@@ -90,7 +132,7 @@ def test_try_fuse_close():
 def test_try_fuse_wrap():
     arc1 = Arc(30, 55, 50, {"A"})
     arc2 = Arc(7, 15, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=10)
+    arc1.try_fuse_with(arc2, max_dist=10, nw=False)
     
     assert arc1.flagged and not arc2.flagged
     assert arc2.meta == {"A"}
@@ -99,7 +141,7 @@ def test_try_fuse_wrap():
 def test_try_fuse_far():
     arc1 = Arc(10, 20, 50, {"A"})
     arc2 = Arc(26, 30, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=2)
+    arc1.try_fuse_with(arc2, max_dist=2, nw=False)
     
     assert not arc1.flagged and not arc2.flagged
 
@@ -110,7 +152,7 @@ def test_try_extend_close():
     
     assert not arc1.flagged and not arc2.flagged
     assert arc1.bounds() == (10, 23)
-    assert arc2.bounds() == (23, 30)
+    assert arc2.bounds() == (24, 30)
     
 def test_try_extend_close_and_loop():
     arc1 = Arc(30, 55, 50, {"A"})
@@ -118,12 +160,12 @@ def test_try_extend_close_and_loop():
     arc1.try_extend_end_with(arc2, max_dist=10)
     
     assert arc1.bounds() == (30, 55)
-    assert arc2.bounds() == (5, 15)
+    assert arc2.bounds() == (6, 15)
 
 def test_try_extend_far():
-    arc1 = Arc(50, 55, 50, {"A"})
+    arc1 = Arc(40, 55, 50, {"A"})
     arc2 = Arc(25, 30, 50, {"B"})
     arc1.try_extend_end_with(arc2, max_dist=5)
     
-    assert arc1.bounds() == (50, 55)
+    assert arc1.bounds() == (40, 55)
     assert arc2.bounds() == (25, 30)

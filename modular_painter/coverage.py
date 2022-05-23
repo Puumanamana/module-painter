@@ -1,16 +1,21 @@
-from itertools import groupby
+from itertools import groupby, chain
 
-import igraph
+from igraph import Graph
 import pandas as pd
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
-from Bio import Align
 
 from modular_painter.arc import Arc
 from modular_painter.coverage_util import get_filler_arc, get_successor
 
 
 class Coverage:
+    def ignore_if_singleton(func):
+        def wrapper(*args, **kwargs):
+            if len(args[0]) < 2:
+                return
+            return func(*args, **kwargs)
+        return wrapper
 
     def __init__(self, *arcs, ref=None):
         self.arcs = list(arcs)
@@ -48,25 +53,25 @@ class Coverage:
         parents = "->".join(f"{p:^5}" for p in parents)
         return f"(Reference: {self.ref})  >>>  {parents}"
 
-    def iter_arcs(self, wrap=False, parent=None):
+    def iter(self, wrap=False, parent=None):
         """
         Important: for wrap=True, self.arcs needs to be (start, end) sorted
         """
+        arcs = [arc for arc in self.arcs if not arc.flagged]
+    
         if parent is not None:
-            arcs = [arc for arc in self.arcs if not arc.flagged and parent in arc.meta]
-        else:
-            arcs = [arc for arc in self.arcs if not arc.flagged]
+            arcs = [arc for arc in arcs if parent in arc.meta]
 
-        if wrap and len(arcs) > 1:
+        if wrap:
             max_end = max(arc.end for arc in arcs)
-            last_arc = next(arc for arc in arcs if arc.end == max_end)            
+            last_arc = next(arc for arc in arcs if arc.end == max_end)
             arcs = [last_arc] + arcs
 
         return iter(arcs)
-    
+
     def get_all_parents(self):
         parents = set()
-        for arc in self.iter_arcs(wrap=False):
+        for arc in self.iter(wrap=False):
             parents |= arc.meta
         return parents
     
@@ -114,7 +119,7 @@ class Coverage:
         """
         Assumes self.arcs is (start, end) sorted
         """
-        arcs = self.iter_arcs(wrap=True)
+        arcs = self.iter(wrap=True)
         current_arc = next(arcs)
 
         for i, arc in enumerate(arcs):
@@ -129,14 +134,12 @@ class Coverage:
 
         return True
 
+    @ignore_if_singleton
     def sync_boundaries(self, attr, max_dist):
         """
         Change intervals boundaries to make them similar
         """
-        if len(self) < 2:
-            return
-
-        features = pd.Series([getattr(arc, attr) for arc in self.iter_arcs(wrap=False)])
+        features = pd.Series([getattr(arc, attr) for arc in self.iter(wrap=False)])
 
         model = AgglomerativeClustering(
             linkage="complete", affinity="l1",
@@ -149,68 +152,50 @@ class Coverage:
         # Set new boundaries
         for i, v in data.iteritems():
             setattr(self.arcs[i], attr, v)
+            self.arcs[i].fix_boundaries()
         self.sort()
 
-    def fuse_close_modules(self, seq_data, max_dist, min_pident, min_size_ratio=0.8):
+    @ignore_if_singleton
+    def fuse_close_modules(self, seq_data, **kw):
         """
         - Removed embedded modules from the same parent (keep largest)
         - Fuse consecutive modules if distance <= min_module_size
         - if dist > min_module_size, check pident with N-W
         Arcs need to be (start, end) sorted
         """
-        aligner = Align.PairwiseAligner(mode="global", open_gap_score=-0.1)
-
         for parent in sorted(self.get_all_parents()):
-            arcs = self.iter_arcs(wrap=True, parent=parent)
-            prev = next(arcs)
-            i = 0
+            # First, we remove any embedded modules
+            self.simplify_embedded(parent=parent)
+            # From this point onwards, intervals are sorted on both start and end
+            iterator = self.iter(wrap=False, parent=parent)
+            prev = next(iterator)
 
+            (qseq, sseq) = (seq_data.get(parent), seq_data.get(self.ref))
             while True:
                 try:
-                    cur = next(arcs)
+                    cur = next(iterator)
                 except StopIteration:
                     break
-                #===== 1) Check for embedded intervals ====#
-                # a) cur C prev => keep prev
-                if prev.start <= cur.start and prev.end >= cur.end:
-                    cur.flag()
-                # b) prev C cur => keep cur
-                elif prev.start == cur.start and prev.end < cur.end:
-                    prev.flag()
-                    prev = cur
-                #==== 2) The intervals are not touching
-                else:
-                    # Check if they are close => we fuse
-                    exitcode = prev.try_fuse_with(cur, max_dist)
-                    # If not, we align with NW and check the identity
-                    if exitcode == 0:
-                        # Get the unaligned sequence of ref and query
-                        qseq = seq_data[parent]
-                        sseq = seq_data[self.ref]
-                        if i == 0: # wrap around
-                            qseq = qseq[prev.qend:] + qseq[:cur.qstart]
-                            sseq = sseq[prev.end:] + sseq[:cur.start]
-                        else: # general case
-                            # need for modulo if the last is merged
-                            qseq = qseq[(prev.qend % len(qseq)):cur.qstart]
-                            sseq = sseq[(prev.end % len(sseq)):cur.start]
+                prev.try_fuse_with(cur, qseq=qseq, sseq=sseq, **kw)
+                prev = cur
+            
+            self.remove_flagged()
 
-                        # Align if computationally feasible
-                        if len(sseq) < 1e3 and len(qseq) / len(sseq) > min_size_ratio:
-                            aln = aligner.align(qseq, sseq)
-                            score = aln.score / len(sseq)
-                            
-                            if score > min_pident:
-                                prev.try_fuse_with(cur, force=True)
-                    prev = cur
-                i += 1
+            # check if we can circularize
+            iterator = self.iter(wrap=True, parent=parent)
+            last = next(iterator)
+            first = next(iterator)
+            last.try_fuse_with(first, qseq=qseq, sseq=sseq, **kw)
+            
+        for arc in self.arcs:
+            arc.fix_boundaries()
+
         self.remove_flagged()
         self.sort()
 
+    @ignore_if_singleton
     def merge_equal_intervals(self):
-        if len(self) < 2:
-            return
-        arcs = self.iter_arcs(wrap=True)
+        arcs = self.iter(wrap=False)
         prev_arc = next(arcs)
         for arc in arcs:
             prev_arc.try_merge_with(arc)
@@ -218,31 +203,29 @@ class Coverage:
 
         self.remove_flagged()        
 
+    @ignore_if_singleton
     def fill_gaps(self, max_extend_dist):
         """
         Fill gaps (if any) between arcs
+        Assumes no embedding between 2 consecutive arcs
         """
-        arcs = self.iter_arcs(wrap=True)
+        arcs = self.iter(wrap=True)
         prev_arc = next(arcs)
         fillers = []
 
         for arc in arcs:
-            if not prev_arc.is_embedded(arc):
-                dist = prev_arc.dist_to_next(arc)
-                if dist <= 0:
-                    pass
-                elif dist > max_extend_dist:
-                    # add a filler arc
-                    filler = get_filler_arc(prev_arc, arc, dist)
-                    fillers.append(filler)
-                else:
-                    prev_arc.try_extend_end_with(arc, max_extend_dist, dist=dist)
+            is_extended = prev_arc.try_extend_end_with(arc, max_extend_dist)
+            if not is_extended: # add a filler arc
+                filler = get_filler_arc(prev_arc, arc)
+                fillers.append(filler)
             prev_arc = arc
+
         self.arcs += fillers
         self.sort()
-
-    def simplify_embedded(self):
-        arcs = self.iter_arcs(wrap=True)
+        
+    @ignore_if_singleton
+    def simplify_embedded(self, parent=None):
+        arcs = self.iter(wrap=True, parent=parent)
         prev_arc = next(arcs)
 
         for arc in arcs:
@@ -254,6 +237,7 @@ class Coverage:
                 prev_arc = arc
         self.remove_flagged()
 
+    @ignore_if_singleton        
     def get_minimal_coverage(self):
         """
         Lee and lee 1983 algorithm
@@ -264,10 +248,6 @@ class Coverage:
         """
 
         arcs = [arc for arc in self.arcs if not arc.flagged]
-        n_interv = len(self)
-
-        if n_interv == 1:
-            return self
 
         if not self.is_covered():
             print(self)
@@ -276,7 +256,7 @@ class Coverage:
         successors = [get_successor(i, arcs) for (i, arc) in enumerate(arcs)]
 
         # Order of the B_i
-        t_ = np.zeros(n_interv, dtype=int)
+        t_ = np.zeros(len(self), dtype=int)
 
         (i, B_1) = (1, 0)
 
@@ -299,6 +279,10 @@ class Coverage:
 
             t_[B_i] = i + 1
             i += 1
+            if i > 1e6:
+                print("infinite loop...")
+                print(self)
+                import ipdb;ipdb.set_trace()
 
         # At this point we have an initial cover
         k = i
@@ -307,6 +291,10 @@ class Coverage:
 
         while not is_opt:
             i += 1
+            if i > 1e6:
+                print("infinite loop...")
+                print(self)
+                import ipdb;ipdb.set_trace()
             B_i = successors[B_i]
 
             S.append(arcs[B_i])
@@ -334,12 +322,12 @@ class Coverage:
         self.sort()
 
     def get_overlap_graph(self, min_overlap=10):
-        g = igraph.Graph(directed=True)
+        g = Graph(directed=True)
         g["ref"] = self.ref
         g["size"] = self.size
 
         # add vertices
-        for i, arc in enumerate(self.iter_arcs(wrap=False)):
+        for i, arc in enumerate(self.iter(wrap=False)):
             for meta in arc.meta:
                 uid = f"{self.ref}.{meta}.{arc.start}-{arc.end}"
                 g.add_vertex(name=uid, parent=meta, order=i, ref=self.ref,
@@ -349,14 +337,19 @@ class Coverage:
             return g
 
         # add edges
-        arcs = self.iter_arcs(wrap=True)
+        arcs = self.iter(wrap=True)
         prev_arc = next(arcs)
 
         for i, arc in enumerate(arcs):
             for meta1 in prev_arc.meta:
                 uid1 = f"{self.ref}.{meta1}.{prev_arc.start}-{prev_arc.end}"
                 start = arc.start
-                end = prev_arc.end % self.size # wrapping condition. This should be the only arc with end >= size
+                end = prev_arc.end
+                # wrapping condition. This should be the only arc with end >= size-1
+                if prev_arc.end == self.size-1:
+                    end = 0
+                elif prev_arc.end > self.size:
+                    end -= self.size
                 for meta2 in arc.meta:
                     uid2 = f"{self.ref}.{meta2}.{arc.start}-{arc.end}"
                     parents = "/".join(sorted([meta1, meta2]))

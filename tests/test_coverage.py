@@ -60,13 +60,13 @@ def test_sync_boundaries():
         Arc(16, 40, 100),        
     )
 
-    cov.sync_boundaries(3, which="start")
+    cov.sync_boundaries("start", 3)
 
     assert cov.arcs[1].start == 0
     assert cov.arcs[2].start == 0
     assert cov.arcs[3].start == 11
 
-def test_extend_arcs_per_parent():
+def test_fuse_modules():
     cov = Coverage(
         Arc(0, 2, 20, {"A"}),
         Arc(1, 4, 20, {"A"}),
@@ -77,9 +77,9 @@ def test_extend_arcs_per_parent():
         Arc(7, 10, 20, {"C"}),
     )
     cov.sort()
-    cov.extend_arcs_per_parent(2)
+    cov.fuse_close_modules({}, max_dist=2, nw=False)
 
-    assert sum(1 for arc in cov.arcs if arc.flagged) == 3
+    assert len(cov) == 4
     assert any(arc.bounds() == (0, 7) for arc in cov.arcs if arc.meta == {"A"})
     assert any(arc.bounds() == (0, 7) for arc in cov.arcs if arc.meta == {"B"})
 
@@ -90,8 +90,9 @@ def test_merge_equal_intervals():
         Arc(0, 5, 10, {"C"})
     )
     cov.merge_equal_intervals()
-    assert cov.arcs[0].flagged and not cov.arcs[1].flagged
-    assert cov.arcs[1].meta == {"A", "B"}
+    assert len(cov) == 2
+    assert cov.arcs[0].meta == {"A", "B"}
+    assert cov.arcs[1].meta == {"C"}
 
 def test_fill_gaps():
     cov = Coverage(
@@ -102,12 +103,12 @@ def test_fill_gaps():
     cov.sort()
     cov.fill_gaps(2)
 
-    na_arc = [arc for arc in cov.arcs if arc.meta == "NA"]
+    na_arc = [arc for arc in cov.arcs if "NA" in arc.meta]
     assert len(na_arc) == 1
-    assert na_arc[0].bounds() == (6, 13)
+    assert na_arc[0].bounds() == (7, 12)
     assert cov.arcs[0].bounds() == (0, 3)
-    assert cov.arcs[1].bounds() == (3, 6)
-    assert cov.arcs[-1].bounds() == (13, 20)
+    assert cov.arcs[1].bounds() == (4, 6)
+    assert cov.arcs[-1].bounds() == (13, 19)
 
 def test_simplify_embedded():
     cov = Coverage(
@@ -117,7 +118,8 @@ def test_simplify_embedded():
     )
     cov.sort()
     cov.simplify_embedded()
-    assert cov.arcs[1].flagged
+    assert len(cov) == 2
+    assert cov.arcs[1].bounds() == (5, 10)
 
 def test_simplify_embedded_loop():
     cov = Coverage(
@@ -127,14 +129,15 @@ def test_simplify_embedded_loop():
     )
     cov.sort()
     cov.simplify_embedded()
-    assert cov.arcs[1].flagged
+    assert cov.arcs[0].bounds() == (0, 9)
+    assert len(cov) == 1
 
 def test_get_successors():
     cov = Coverage(
         Arc(0, 3, 10),
         Arc(1, 4, 10),
         Arc(2, 5, 10),
-        Arc(4, 10, 10)
+        Arc(5, 9, 10)
     )
     successors = [get_successor(i, cov.arcs) for (i, arc) in enumerate(cov.arcs)]
 

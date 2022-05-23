@@ -27,18 +27,39 @@ def is_interfering(parents, freqs):
 
     return any(~is_odd) & is_odd & is_rc
 
+def summarize_breakpoints(graphs, n=10):
+    bk = get_breakpoints(graphs)
+    print("\n======= Recurrent breakpoints =======")
+    bk_prev = bk.groupby(["parents", "bk_id"]).ref.agg([set])
+    bk_prev["len"] = bk_prev["set"].apply(len)
+    bk_prev.sort_values(by="len", ascending=False, inplace=True)
+    print(bk_prev.head(n))
+
+    print("\n======= Recurrent parent pairs =======")
+    pp_prev = bk.groupby("parents").ref.agg([set])
+    pp_prev["len"] = pp_prev["set"].apply(len)
+    pp_prev.sort_values(by="len", ascending=False, inplace=True)
+    print(pp_prev.head(n))
+    
+    print("\n======= Recurrent parents =======")
+    bk.parents = bk.parents.str.split("/")
+    bk = bk.explode("parents").groupby("parents").ref.agg([set])
+    bk["len"] = bk["set"].apply(len)
+    bk.sort_values(by="len", ascending=False, inplace=True)
+    print(bk.head(n))
+
 def get_breakpoints(graphs):
     breakpoints = []
 
-    for ref, graph in graphs.items():
+    for graph in graphs:
         for e in graph.es:
-            breakpoints.append([ref, e["bk_id"], e["parents"]])
+            breakpoints.append([graph["ref"], e["bk_id"], e["parents"], e["pos"]])
 
-    breakpoints = pd.DataFrame(breakpoints, columns=["ref", "bk_id", "parents"])
-    breakpoints["mult"] = breakpoints.duplicated(subset=["ref", "bk_id"], keep=False)
+    breakpoints = pd.DataFrame(breakpoints, columns=["ref", "bk_id", "parents", "pos"])
+    breakpoints["mult"] = breakpoints.duplicated(subset=["ref", "pos"], keep=False)
 
     # Conditions for interference
-    # the bk appears >1 time on the same reference with another parent pair with even number of breakpoints
+    # the parent pair appears >1 time on the same reference with another parent pair with even number of breakpoints
     # 1) compute freqs = Counter[(ref, parent_pair) for ...]
     # 2) groupby(["ref", "bk_id"]).parents -> agg(lambda x: freqs[x]))
     freqs_per_ref = breakpoints[["ref", "parents"]].value_counts()
@@ -51,7 +72,8 @@ def find_recombinations(bk):
     Identify each possible recombination
     """
     def get_sorted_recombs(x):
-        return [tuple(sorted(xi)) for xi in combinations(x, 2)]
+        # avoid repeated breakpoints on the same child (due to repeats mostly)
+        return [tuple(sorted(xi)) for xi in combinations(set(x), 2)]
 
     # Get all possible recombinations
     rc = bk.groupby(["ref", "parents"]).bk_id.agg(get_sorted_recombs)
@@ -132,11 +154,12 @@ def select_by_recombinations(graphs):
         # Check for infinite loop
         if prev == scores.index[0]:
             print("Infinite loop...")
+            print(rc[rc.bk_ids==prev[1]])
             import ipdb;ipdb.set_trace()
         prev = scores.index[0]
         
         # Remove from graph
-        for ref, graph in graphs.items():
+        for graph in graphs:
             remove_alternative_breakpoints(graph, set(bk_ids), parents)
         
         # print(f"Selection {parents} {set(bk_ids)}. Remaining: {rc.mult.sum()}")
@@ -166,7 +189,7 @@ def select_by_breakpoints(graphs):
         prev = scores.index[0]
         
         # Remove from graph
-        for ref, graph in graphs.items():
+        for graph in graphs:
             remove_alternative_breakpoints(graph, {bk_id}, parents)
         
         # print(f"Selection {parents} {bk_id}. Remaining: {bk.mult.sum()}")
@@ -175,15 +198,18 @@ def remove_alternative_breakpoints(graph, bk_, parents):
     if not graph.es: # no breakpoints
         return
 
-    # make sure graph has all breakpoints in bk_
-    if not len(graph.es.select(parents=parents, bk_id_in=bk_)) == len(bk_):
+    edges_with_bk = graph.es.select(bk_id_in=bk_)
+    # make sure graph has both breakpoints and parents
+    # > happens when the same bk_id happens on the same child
+    # multiple times (most likely due to repeats)
+    if not len(edges_with_bk.select(parents=parents)) >= len(bk_):
         return
 
     parents = set(parents.split("/"))
 
     # Remove from graph
     graph.delete_vertices(
-        vi for e in graph.es.select(bk_id_in=bk_)
+        vi for e in edges_with_bk
         for vi in e.tuple
         if not graph.vs["parent"][vi] in parents
     )

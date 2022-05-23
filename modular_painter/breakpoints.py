@@ -6,7 +6,7 @@ import pandas as pd
 import igraph
 from sklearn.cluster import AgglomerativeClustering
 
-from util import subset_fasta, build_homology_graph
+from modular_painter.util import subset_fasta, build_homology_graph
 
 
 def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None, threads=1):
@@ -16,9 +16,9 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
     # Fetch and format breakpoint data
     breakpoint_data = pd.concat([
         pd.DataFrame({attr: graph.es[attr] for attr in graph.es.attributes()})
-        for graph in graphs.values()
+        for graph in graphs
     ])
-    breakpoint_data["eid"] = [eid for graph in graphs.values() for eid in graph.es.indices]
+    breakpoint_data["eid"] = [eid for graph in graphs for eid in graph.es.indices]
     breakpoint_data = breakpoint_data.groupby(["ref", "start", "end"]).eid.agg(
         lambda x: ";".join(map(str, x))
     )
@@ -28,7 +28,6 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
     homology_graph = build_homology_graph(bk_fasta, min_id=0.95, min_size_ratio=0.5, verbose=0, threads=threads)
 
     #==== Extract connected components ====#
-    # tmp = set()
     bins = {}
     vertices_array = np.array(homology_graph.vs['name'])
     for i, component in enumerate(homology_graph.components()):
@@ -39,9 +38,9 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
 
     bins = pd.Series(bins, name="bin").rename_axis(index=["ref","eid"]).sort_index()
 
-    for (ref, graph) in graphs.items():
-        if ref in bins.index.get_level_values("ref"):
-            graph.es["bk_id"] = bins.loc[ref].to_numpy()
+    for graph in graphs:
+        if graph["ref"] in bins.index.get_level_values("ref"):
+            graph.es["bk_id"] = bins.loc[graph["ref"]].to_numpy()
 
 def map_missing_parents(genomes, coverages, min_id=0.99, threads=1, outdir=None):
     """
