@@ -1,8 +1,9 @@
 name: test
 
 on: push
+
 jobs:
-  Test-all:
+  Test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-python@v3
