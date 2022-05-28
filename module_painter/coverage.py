@@ -5,8 +5,8 @@ import pandas as pd
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 
-from modular_painter.arc import Arc
-from modular_painter.coverage_util import get_filler_arc, get_successor
+from module_painter.arc import Arc
+from module_painter.coverage_util import get_filler_arc, get_successor
 
 
 class Coverage:

@@ -4,14 +4,14 @@ import pandas as pd
 from Bio import SeqIO
 from igraph import Graph
 
-from modular_painter.parser import parse_args
-from modular_painter.util import concatenate_fasta
-from modular_painter.coverage import Coverage
-from modular_painter.wrapper import blastn, minimap2
-from modular_painter.breakpoints import map_missing_parents, set_breakpoint_ids
-from modular_painter.parent_selection import summarize_breakpoints, select_by_recombinations, select_by_breakpoints
-from modular_painter.clustering import cluster_phages
-from modular_painter.display import display_genomes
+from module_painter.parser import parse_args
+from module_painter.util import concatenate_fasta
+from module_painter.coverage import Coverage
+from module_painter.wrapper import blastn, minimap2
+from module_painter.breakpoints import map_missing_parents, set_breakpoint_ids
+from module_painter.parent_selection import summarize_breakpoints, select_by_recombinations, select_by_breakpoints
+from module_painter.clustering import cluster_phages
+from module_painter.display import display_genomes
 
 
 TRUTH = dict(
@@ -161,5 +161,5 @@ def main():
     logging.info(f"Interactive plot in {args.outdir}")
     display_genomes(overlap_graphs, clusters=clusters, norm=True, outdir=args.outdir)
 
-bif __name__ == '__main__':
+if __name__ == '__main__':
     main()

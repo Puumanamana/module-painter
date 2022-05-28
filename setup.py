@@ -1,14 +1,14 @@
 from setuptools import setup, find_packages
 
-setup(name='modular_painter',
+setup(name='module-painter',
       version='0.1.0',
       description='Tool for bacteriophage painting',
       long_description=open('README.rst').read(),
-      url='https://github.com/Puumanamana/modular_painting',
+      url='https://github.com/Puumanamana/module-painter',
       packages=find_packages(),
       license='Apache License 2.0',
       zip_safe=False,
-      entry_points={'console_scripts': ['modular-painter=modular_painter.main:main']},
+      entry_points={'console_scripts': ['module-painter=module_painter.main:main']},
       python_requires='>=3.6',
       test_requires=['pytest', 'pytest-cov'],
       install_requires=[

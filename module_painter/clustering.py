@@ -3,7 +3,7 @@ from itertools import combinations
 import numpy as np
 import igraph
 
-from modular_painter.parent_selection import get_breakpoints, find_recombinations
+from module_painter.parent_selection import get_breakpoints, find_recombinations
 
 
 def cluster_phages(graphs, gamma=0.75, feature="breakpoints"):

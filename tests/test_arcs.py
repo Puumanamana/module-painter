@@ -1,4 +1,4 @@
-from modular_painter.arc import Arc
+from module_painter.arc import Arc
 
 def test_len():
     arc = Arc(90, 110, 100)

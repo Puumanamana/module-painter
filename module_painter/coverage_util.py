@@ -1,4 +1,5 @@
-from modular_painter.arc import Arc
+from module_painter.arc import Arc
+
 
 def get_filler_arc(arc1, arc2):
     """

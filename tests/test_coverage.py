@@ -1,7 +1,7 @@
 import pandas as pd
-from modular_painter.arc import Arc
-from modular_painter.coverage import Coverage
-from modular_painter.coverage_util import get_successor
+from module_painter.arc import Arc
+from module_painter.coverage import Coverage
+from module_painter.coverage_util import get_successor
 
 
 def test_len():

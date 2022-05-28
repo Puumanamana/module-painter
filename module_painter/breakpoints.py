@@ -6,7 +6,7 @@ import pandas as pd
 import igraph
 from sklearn.cluster import AgglomerativeClustering
 
-from modular_painter.util import subset_fasta, build_homology_graph
+from module_painter.util import subset_fasta, build_homology_graph
 
 
 def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None, threads=1):

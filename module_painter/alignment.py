@@ -2,7 +2,7 @@ import numpy as np
 from Bio import SeqIO, Align
 from sklearn.cluster import AgglomerativeClustering
 
-from modular_painter.util import wrapping_substr
+from module_painter.util import wrapping_substr
 
 
 def refine_alignments(alns, fastas, min_pident=None, arc_eq_diffs=None, min_module_size=None):
