@@ -31,13 +31,13 @@ TRUTH = dict(
 )
 
 ALN_PARAMS = dict(
-    minimap2={"s": 100, "z": "20,20", "N": 50,
+    minimap2={"z": "50,50", "N": 50, "U": 100,
               "no-long-join": True, "c": True, "P": True},
     blastn={"gapopen": 5, "gapextend": 2}
 )
 
 def main():
-    logging.basicConfig(level=logging.DEBUG,
+    logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(levelname)s:%(message)s',
                         datefmt='%H:%M:%S')
 
@@ -63,7 +63,7 @@ def main():
                             **ALN_PARAMS["minimap2"])
         alns.to_csv(aln_file)
 
-    logging.info(f"{sum(alns.pident>=args.min_id):,} alignments remaining (pident>={args.min_id:.1%})")
+    logging.debug(f"{sum(alns.pident>=args.min_id):,} alignments remaining (pident>={args.min_id:.1%})")
     alns = alns[alns.pident >= args.min_id]
     # For each query, keep hits with sstrand of the best hit
     sstrands = alns.groupby(["sacc", "qacc"]).apply(lambda df: df.set_index("sstrand").nident.idxmax()).to_dict()
@@ -103,7 +103,6 @@ def main():
         coverage.merge_equal_intervals()
         # Remove embedded intervals
         coverage.simplify_embedded()
-        print(coverage)
         # Fill all gaps
         coverage.fill_gaps(args.min_module_size)
         if len(coverage) < 2:
@@ -122,8 +121,8 @@ def main():
     map_missing_parents(populations[1], coverages, outdir=args.outdir, threads=1)
 
     for c in coverages:
-        print(c)
-        # logging.debug(c.show())
+        # print(c)
+        logging.debug(c.show())
         # logging.debug(TRUTH.get(c.ref))
 
     logging.info(f"Remaining: {[c.ref for c in coverages]}")
@@ -139,27 +138,28 @@ def main():
         logging.info("Mapping breakpoints")
         set_breakpoint_ids(overlap_graphs, populations[1], outdir=args.outdir, threads=1)
 
-        # summarize_breakpoints(overlap_graphs)
         logging.info("Parent selection: by recombinations")
         select_by_recombinations(overlap_graphs)
         logging.info("Parent selection: by breakpoint")
         select_by_breakpoints(overlap_graphs)
 
+        summarize_breakpoints(overlap_graphs)
+
         for graph in overlap_graphs:
             graph.write_pickle(graph_paths[graph["ref"]])
     
     logging.info(f"Clustering (feature: {args.clustering_feature})")
-    clusters = cluster_phages(overlap_graphs, gamma=0.5, feature=args.clustering_feature)
+    clusters = cluster_phages(overlap_graphs, gamma=args.clustering_gamma, feature=args.clustering_feature)
     clusters = [c for c in clusters if len(c) > 1]
 
     if not clusters:
         logging.warning("No species cluster identified.")
         return
 
-    logging.info([list(c) for c in sorted(clusters, key=lambda x: -len(x))])
+    logging.info("\n".join(",".join(c) for c in sorted(clusters, key=lambda x: -len(x))))
 
     logging.info(f"Interactive plot in {args.outdir}")
     display_genomes(overlap_graphs, clusters=clusters, norm=True, outdir=args.outdir)
 
-if __name__ == '__main__':
+bif __name__ == '__main__':
     main()
