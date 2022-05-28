@@ -32,7 +32,7 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
     vertices_array = np.array(homology_graph.vs['name'])
     for i, component in enumerate(homology_graph.components()):
         for vertex in component:
-            (ref, _, _, eids) = vertices_array[vertex].split("|")
+            (ref, _, _, eids) = vertices_array[vertex].split("^")
             for eid in eids.split(";"):
                 bins[(ref, int(eid))] = i
 
@@ -68,15 +68,12 @@ def map_missing_parents(genomes, coverages, min_id=0.99, threads=1, outdir=None)
         verbose=0, threads=threads
     )
 
-    # print(homology_graph.es.find(name="child_266|58027|58437|27<->child_266|871|1286|18"))
-    # import ipdb;ipdb.set_trace()
-
     # Extract connected components
     bin_mapping = {}
     vertices_array = np.array(homology_graph.vs['name'])
     for i, component in enumerate(homology_graph.components()):
         for vertex in component:
-            (name, start, end, _) = vertices_array[vertex].split("|")
+            (name, start, end, _) = vertices_array[vertex].split("^")
             bin_mapping[(name, int(start), int(end))] = i
 
     # Update NAs with corresponding bin id
