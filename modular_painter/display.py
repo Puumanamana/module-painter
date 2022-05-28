@@ -43,37 +43,24 @@ def display_genomes(graphs, clusters=None, norm=True, outdir=None):
     graphs = {graph["ref"]: graph for graph in graphs}
     graphs = [graphs[ref] for cluster in clusters for ref in cluster]
     
-    cols = ["start", "end", "parent", "ref"]
+    cols = ["start", "end", "parent", "ref", "size"]
 
     data = pd.DataFrame([
         vals for g in graphs
         for vals in zip(*[g.vs[col] for col in cols])
     ], columns=cols)
 
-    genome_sizes = {g["ref"]: g["size"] for g in graphs}
-    
     if norm:
-        to_add = []
+        data["extra"] = data["end"] - data["size"]
+        data.loc[data.extra > 0, "end"] = data["size"]
 
-        for ref in data.ref.unique():
-            data_t = data[data.ref == ref].sort_values(by=["start", "end"])
-            last_idx = data_t.index[-1]
-            extra = data_t.end.iloc[-1] - genome_sizes[ref]
+        to_add = data[data.extra > 0].copy()
+        to_add["start"] = 0
+        to_add["end"] = data.extra
+        
+        data = pd.concat([data, to_add]).sort_values(by=['ref', 'start', 'end']).reset_index(drop=True)
 
-            if extra > 0:
-                data.loc[last_idx, 'end'] = genome_sizes[ref]
-                
-                to_add.append((0, extra,
-                               data_t.loc[last_idx, 'parent'],
-                               data_t.loc[last_idx, 'ref']))
-
-        offset = data.index.max() + 1
-        for i, entry in enumerate(to_add):
-            data.loc[i+offset] = entry
-                
-        data = data.sort_values(by=['ref', 'start', 'end']).reset_index(drop=True)
-
-    hover = HoverTool(tooltips=[('Parent', '@parent')])
+    hover = HoverTool(tooltips=[(x, f"@{x.lower()}") for x in ["Parent", "Ref", "Start", "End"]])
     
     legend_opts = dict(
         glyph_height=15,
@@ -81,10 +68,11 @@ def display_genomes(graphs, clusters=None, norm=True, outdir=None):
      )
 
     plot_opts = dict(
-        width=700, height=max(50*data.ref.nunique(), 200),
+        width=900, height=max(50*data.ref.nunique(), 200),
         xlabel='Position', ylabel='Phage',
         gridstyle=dict(ygrid_line_color='gray', xgrid_line_alpha=0, ygrid_line_dash=[4, 4]),
         show_grid=True,
+        show_legend=False,
         legend_position="right",
         legend_limit=50,
         legend_offset=(30, 0),
@@ -129,6 +117,7 @@ def display_genomes(graphs, clusters=None, norm=True, outdir=None):
 
         yaxis_pos = range(data_c.ref.nunique())
         yaxis_ticks = data_c.ref.unique()
+        # yaxis_ticks = [x if len(x) < 20 else x[:20] + "..." for x in data_c.ref.unique()]
         
         overlay = (
             hv.Overlay(subplot_layer)
