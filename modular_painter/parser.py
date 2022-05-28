@@ -33,6 +33,8 @@ def parse_args():
                         help="Maximum distance between modules boundaries to consider them identical.")
     parser.add_argument("--clustering-feature", type=str, default="breakpoint", choices=["breakpoint", "recombination"],
                         help="Feature to use to cluster phages")
+    parser.add_argument("--clustering-gamma", type=float, default=0.5,
+                        help="Cluster density")
     parser.add_argument("--use-ground-truth", action="store_true",
                         help="argument to remove later after the paper is published")
     parser.add_argument("--resume", action="store_true",
