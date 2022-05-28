@@ -35,7 +35,7 @@ def subset_fasta(filename, subset_df, min_len=0, outprefix="/tmp"):
                     extension = (min_len-seq_len + 1) // 2
 
                 subseq = wrapping_substr(seq, start-extension, end+extension+1)
-                writer.write(f">{seq_id}|{start}|{end}|{metadata}\n{subseq}\n")
+                writer.write(f">{seq_id}^{start}^{end}^{metadata}\n{subseq}\n")
 
     return output
 
