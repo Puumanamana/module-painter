@@ -1,6 +1,9 @@
 Modular painting for bacteriophages
 ===================================
 
+.. image:: https://img.shields.io/github/workflow/status/Puumanamana/modular_painting/test?label=tests&logo=github
+   :target: https://github.com/Puumanamana/modular_painting/actions?query=workflow
+
 Citation (Work in progress)
 ---------------------------
 Arisdakessian C., Bergeron A., Belcaid M., Poisson G.
