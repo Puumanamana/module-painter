@@ -127,21 +127,3 @@ if __name__ == '__main__':
             for pos, (variant, junction) in enumerate(zip(child, junctions)):
                 seq += (junction + modules[pos][variant])
             writer.write(f">{seq_id} {meta}\n{seq}\n")
-
-    # print("====Forefathers====")
-    # cmap = {seq_id: i for (i, seq_id) in enumerate(forefathers)}
-
-    # for (seq_id, forefather) in forefathers.items():
-    #     f_str =  f"{seq_id}: " + " | ".join(map(str, forefather))
-    #     print(color.display(f_str, n=cmap[seq_id]))
-
-    # print("====Children====")
-    # for (seq_id, child) in children.items():
-    #     cluster = seq_id.split(".")[-1]
-    #     forefather_cluster = [it for it in forefathers.items()
-    #                           if it[0].endswith(cluster)]
-    #     c_str = []
-    #     for j, variant in enumerate(child):
-    #         parent = next(it[0] for it in forefather_cluster if it[1][j] == variant)
-    #         c_str.append(color.display(variant, n=cmap[parent]))
-    #     print(f"{seq_id}: " + " | ".join(c_str))
