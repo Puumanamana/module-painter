@@ -27,26 +27,28 @@ def is_interfering(parents, freqs):
 
     return any(~is_odd) & is_odd & is_rc
 
-def summarize_breakpoints(graphs, n=10):
+def summarize_breakpoints(graphs, n=10, parent_pairs=False, parents=False):
     bk = get_breakpoints(graphs)
     print("\n======= Recurrent breakpoints =======")
     bk_prev = bk.groupby(["parents", "bk_id"]).ref.agg([set])
     bk_prev["len"] = bk_prev["set"].apply(len)
-    bk_prev.sort_values(by="len", ascending=False, inplace=True)
+    bk_prev = bk_prev.sort_values(by="len", ascending=False).drop(columns="set")
     print(bk_prev.head(n))
 
-    print("\n======= Recurrent parent pairs =======")
-    pp_prev = bk.groupby("parents").ref.agg([set])
-    pp_prev["len"] = pp_prev["set"].apply(len)
-    pp_prev.sort_values(by="len", ascending=False, inplace=True)
-    print(pp_prev.head(n))
-    
-    print("\n======= Recurrent parents =======")
-    bk.parents = bk.parents.str.split("/")
-    bk = bk.explode("parents").groupby("parents").ref.agg([set])
-    bk["len"] = bk["set"].apply(len)
-    bk.sort_values(by="len", ascending=False, inplace=True)
-    print(bk.head(n))
+    if parent_pairs:
+        print("\n======= Recurrent parent pairs =======")
+        pp_prev = bk.groupby("parents").ref.agg([set])
+        pp_prev["len"] = pp_prev["set"].apply(len)
+        pp_prev.sort_values(by="len", ascending=False, inplace=True)
+        print(pp_prev.head(n))
+
+    if parents:
+        print("\n======= Recurrent parents =======")
+        bk.parents = bk.parents.str.split("/")
+        bk = bk.explode("parents").groupby("parents").ref.agg([set])
+        bk["len"] = bk["set"].apply(len)
+        bk.sort_values(by="len", ascending=False, inplace=True)
+        print(bk.head(n))
 
 def get_breakpoints(graphs):
     breakpoints = []
@@ -165,8 +167,6 @@ def select_by_recombinations(graphs):
         # print(f"Selection {parents} {set(bk_ids)}. Remaining: {rc.mult.sum()}")
 
 def select_by_breakpoints(graphs):
-    """
-    """
     prev = ""
     while True:
         bk = get_breakpoints(graphs)
