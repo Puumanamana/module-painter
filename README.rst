@@ -1,8 +1,8 @@
 Modular painting for bacteriophages
 ===================================
 
-.. image:: https://img.shields.io/github/workflow/status/Puumanamana/module-painting/test?label=tests&logo=github
-   :target: https://github.com/Puumanamana/module-painting/actions?query=workflow
+.. image:: https://img.shields.io/github/workflow/status/Puumanamana/module-painter/test?label=tests&logo=github
+   :target: https://github.com/Puumanamana/module-painter/actions?query=workflow
 
 Citation (Work in progress)
 ---------------------------
@@ -20,5 +20,5 @@ ModularPainter is a command line tool. It can be installed with...
 Contribute
 ----------
 
-- Issue Tracker: `github <https://github.com/Puumanamana/module-painting/issues>`_
-- Source Code: `github <https://github.com/Puumanamana/module-painting>`_
+- Issue Tracker: `github <https://github.com/Puumanamana/module-painter/issues>`_
+- Source Code: `github <https://github.com/Puumanamana/module-painter>`_
