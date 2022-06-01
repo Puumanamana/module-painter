@@ -1,4 +1,8 @@
+import logging
 from Bio import Align
+
+
+logger = logging.getLogger("module-painter")
 
 class Arc:
     def __init__(self, start, end, size, meta="X", **attrs):
@@ -16,7 +20,9 @@ class Arc:
     def fix_boundaries(self):
         seq_len = self.end-self.start+1
         if seq_len <= 0:
-            raise ValueError(self.__repr__())
+            logger.error("end < start for arc: {self.meta}")
+            logger.error(self.__repr__())
+            exit(1)
         if seq_len >= self.size:
             self.start = 0
             self.end = self.size - 1
@@ -52,7 +58,8 @@ class Arc:
 
     def split_at_end(self):
         if self.end < self.size:
-            assert ValueError("Arc does not wrap around, cannot split at end")
+            logger.error(f"Arc {self.meta} does not wrap around, cannot split at end")
+            exit(1)
         arc_1 = Arc(self.start, self.size-1, self.size, meta=self.meta)
         arc_2 = Arc(0, self.end % self.size, self.size, meta=self.meta)
 
@@ -108,6 +115,8 @@ class Arc:
         if dist > max_dist:
             return False # too far
 
+        logger.debug("Extending: {self.meta}:{self.start:,}-{self.end:,} -> {other.meta}:{other.start:,}-{other.end:,}")
+
         if self.start <= other.start: # General case: 1--1...2--2
             left_extend = dist // 2
         else: # Loop: ..2---2...1--1..
@@ -148,6 +157,10 @@ class Arc:
         return -1
         
     def try_fuse_with(self, other, max_dist=None, nw=True, min_nw_id=None, **aln_kw):
+        """
+        Fuse self with other into one arc with the meta shared by both arcs
+        Flag self, unflag other
+        """
         dist = self.dist_to_next(other)
 
         if dist > max_dist and not nw:
@@ -166,6 +179,8 @@ class Arc:
         other.unflag()
         other.meta = shared_meta
 
+        logger.debug(f"Fusing: {self.meta}:{self.start:,}-{self.end:,} -> {other.meta}:{other.start:,}-{other.end:,}")
+        
         if self.start < other.start: # General case: 1--1...2--2
             other.start = self.start
         else: # Loop: ..2---2...1--1..

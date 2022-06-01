@@ -1,3 +1,4 @@
+import logging
 from itertools import groupby, chain
 
 from igraph import Graph
@@ -8,6 +9,8 @@ from sklearn.cluster import AgglomerativeClustering
 from module_painter.arc import Arc
 from module_painter.coverage_util import get_filler_arc, get_successor
 
+
+logger = logging.getLogger("module-painter")
 
 class Coverage:
     def ignore_if_singleton(func):
@@ -147,7 +150,9 @@ class Coverage:
         ).fit(features.values[:, None])
 
         data = features.groupby(model.labels_).transform(min if "start" in attr else max)
-        data.groupby(level=0).filter(lambda x: len(x) > 1)
+        data = data.groupby(level=0).filter(lambda x: len(x) > 1)
+
+        logger.debug(f"Changing {attr} boundary for {data.shape[0]} arcs")
         
         # Set new boundaries
         for i, v in data.iteritems():
@@ -222,7 +227,7 @@ class Coverage:
 
         self.arcs += fillers
         self.sort()
-        
+    
     @ignore_if_singleton
     def simplify_embedded(self, parent=None):
         arcs = self.iter(wrap=True, parent=parent)
@@ -230,9 +235,11 @@ class Coverage:
 
         for arc in arcs:
             if arc.is_embedded(prev_arc, strict=True):
+                # logger.debug(f"Discarding {arc.meta} (embedded in {prev_arc.meta})")
                 arc.flag()
             else:
                 if prev_arc.is_embedded(arc, strict=True):
+                    # logger.debug(f"Discarding {prev_arc.meta} (embedded in {arc.meta})")
                     prev_arc.flag()
                 prev_arc = arc
         self.remove_flagged()
@@ -251,7 +258,8 @@ class Coverage:
 
         if not self.is_covered():
             print(self)
-            raise ValueError(f"{self.ref} is not covered. Aborting")
+            logger.error(f"{self.ref} is not covered. Aborting")
+            exit(1)
 
         successors = [get_successor(i, arcs) for (i, arc) in enumerate(arcs)]
 

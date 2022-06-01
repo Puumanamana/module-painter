@@ -1,4 +1,5 @@
 import io
+import logging
 import shutil
 import subprocess as sp
 from pathlib import Path
@@ -13,6 +14,9 @@ ALN_HEADER = ["qacc", "qlen", "qstart", "qend", "sstrand",
               "nident", "length"]
 PAF_HEADER = ALN_HEADER + ["mapq"]
 BLAST_HEADER = ALN_HEADER + ["bitscore", "pident"]
+
+
+logger = logging.getLogger('module-painter')
 
 def check_if_exists(func):
     binary = func.__name__
@@ -70,15 +74,18 @@ def minimap2(query, ref, **kwargs):
         **in_stream
     )
 
-    aln = pd.read_csv(io.StringIO(aln_str), header=None, sep="\t",
+    alns = pd.read_csv(io.StringIO(aln_str), header=None, sep="\t",
                       usecols=range(len(PAF_HEADER)), names=PAF_HEADER)
-    aln['pident'] = aln.nident / aln.length
+    alns['pident'] = alns.nident / alns.length
 
     # Fix end to be 0-indexed
     for attr in ["qend", "send"]:
-        aln[attr] -= 1
+        alns[attr] -= 1
 
-    return aln
+    logger.info(f"Found {alns.shape[0]:,} alignments with minimap2")
+    logger.info(f"#children: {alns.sacc.nunique()}, #parents: {alns.qacc.nunique()}")
+
+    return alns
 
 @check_if_exists
 def blastn(query, ref, outdir=None, **blast_opt):
@@ -104,18 +111,42 @@ def blastn(query, ref, outdir=None, **blast_opt):
         print(blastn_on_db)
         blastn_on_db()
 
-    aln = pd.read_csv(blast_file, sep="\t", header=None, names=BLAST_HEADER)
-    aln.pident = aln.pident/100.
-    aln.sstrand = aln.sstrand.replace(dict(plus='+', minus='-'))
+    alns = pd.read_csv(blast_file, sep="\t", header=None, names=BLAST_HEADER)
+    alns.pident = alns.pident/100.
+    alns.sstrand = alns.sstrand.replace(dict(plus='+', minus='-'))
 
     # swap sstart and send if strand="-" so that sstart < send
-    reverse = aln.sstrand == "-"
-    sends = aln.loc[reverse, "send"]
-    aln.loc[reverse, "send"] = aln.loc[reverse, "sstart"]
-    aln.loc[reverse, "sstart"] = sends
+    reverse = alns.sstrand == "-"
+    sends = alns.loc[reverse, "send"]
+    alns.loc[reverse, "send"] = alns.loc[reverse, "sstart"]
+    alns.loc[reverse, "sstart"] = sends
 
     # Fix start/end to be 0-indexed
     for attr in ["qstart", "qend", "sstart", "send"]:
-        aln[attr] -= 1
+        alns[attr] -= 1
 
-    return aln
+    logger.info(f"Found {alns.shape[0]:,} alignments with blastn")
+    logger.info(f"#children: {alns.sacc.nunique()}, #parents: {alns.qacc.nunique()}")
+
+    return alns
+
+def filter_alignments(alns, min_id=0.9):
+    # Keep hits with pident > min_id
+    logger.info(f"pident >= {min_id:.1%} -> {sum(alns.pident>=min_id):,} alignments remaining")
+    alns = alns[alns.pident >= min_id]
+
+    # Stop if no alignments left
+    if alns.empty:
+        logger.error(f"All alignments were discarded. Try decreasing --min-id.")
+        return alns
+
+    # For each query, keep hits with sstrand of the best hit
+    sstrands = alns.groupby(["sacc", "qacc"]).apply(lambda df: df.set_index("sstrand").nident.idxmax()).to_dict()
+    alns = alns.groupby(["sacc", "qacc"], group_keys=False).apply(lambda df: df[df.sstrand==sstrands[df.name]])
+    logger.debug(f"Strand filtering -> {alns.shape[0]:,} alignments remaining")
+
+    # Discard children if only one parent is found
+    alns = alns.groupby("sacc").filter(lambda x: x.qacc.nunique() > 1)
+    logger.info(f"{alns.sacc.nunique():,} children remaining (>2 parents found)")
+
+    return alns

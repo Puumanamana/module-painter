@@ -52,13 +52,14 @@ def display_genomes(graphs, clusters=None, norm=True, outdir=None):
 
     if norm:
         data["extra"] = data["end"] - data["size"]
-        data.loc[data.extra > 0, "end"] = data["size"]
 
-        to_add = data[data.extra > 0].copy()
-        to_add["start"] = 0
-        to_add["end"] = data.extra
-        
-        data = pd.concat([data, to_add]).sort_values(by=['ref', 'start', 'end']).reset_index(drop=True)
+        if any(data.extra > 0):
+            data.loc[data.extra > 0, "end"] = data["size"]
+            to_add = data[data.extra > 0].copy()
+            to_add["start"] = 0
+            to_add["end"] = data.extra
+
+            data = pd.concat([data, to_add]).sort_values(by=['ref', 'start', 'end']).reset_index(drop=True)
 
     hover = HoverTool(tooltips=[(x, f"@{x.lower()}") for x in ["Parent", "Ref", "Start", "End"]])
     

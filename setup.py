@@ -20,5 +20,6 @@ setup(name='module-painter',
           'holoviews',
           'scikit-learn',
           'igraph',
-          'mappy'
+          'mappy',
+          'psutil'
       ])
