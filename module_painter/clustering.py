@@ -36,7 +36,7 @@ def cluster_phages(graphs, gamma=0.75, feature="breakpoints", outdir=None):
     communities = sorted([vertices[idx] for idx in communities], key=lambda x: -len(x))
 
     # Save clusters to file
-    with open(f"{outdir}/clusters.csv") as writer:
+    with open(f"{outdir}/clusters.csv", "w") as writer:
         writer.write("seq_id,cluster\n")
         for i, community in enumerate(communities):
             for c in community:
