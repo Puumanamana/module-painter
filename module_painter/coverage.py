@@ -150,7 +150,7 @@ class Coverage:
         ).fit(features.values[:, None])
 
         data = features.groupby(model.labels_).transform(min if "start" in attr else max)
-        data = data.groupby(level=0).filter(lambda x: len(x) > 1)
+        data = data.groupby(model.labels_).filter(lambda x: len(x) > 1)
 
         logger.debug(f"Changing {attr} boundary for {data.shape[0]} arcs")
         
