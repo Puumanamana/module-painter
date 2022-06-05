@@ -19,6 +19,8 @@ def parse_args():
                         help="All populations (fasta)")
     parser.add_argument("-c", "--children", type=str, nargs="+",
                         help="Children sequences within the population (list of glob pattern)")
+    parser.add_argument("--exclude", type=str, nargs="+",
+                        help="Files to exclude from the population (list of glob pattern)")
     parser.add_argument("--aligner", type=str, default="blastn", choices=["blastn", "minimap2"],
                         help="Alignment tool")    
     parser.add_argument("--outdir", type=str, default="/tmp/cedric/modular_painting/output",
@@ -65,6 +67,10 @@ def parse_args():
     else:
         args.populations = [Path(p) for p in args.populations]
 
+    if args.exclude:
+        args.populations = [p for p in args.populations if not
+                            any(re.match(".*"+e.strip("*")+".*", p.name) for e in args.exclude)]
+        
     args.children = [f for f in args.populations
                      if any(re.match(".*"+ri.strip("*")+".*", f.name)
                             for ri in args.children)]
