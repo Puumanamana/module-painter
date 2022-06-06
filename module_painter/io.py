@@ -6,52 +6,75 @@ import psutil
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-TEST_DIR = Path(ROOT_DIR, "tests")
+TEST_DIR = Path(ROOT_DIR, "tests/data")
 
 def parse_args():
     """
-    Command line parser for ModularPainter
+    Command line parser for painting and simulation
     """
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-d", "--dataset", type=str, default="fromageries",
+    subparsers = parser.add_subparsers(help="sub-command help", dest="cmd")
+
+    # Main parser
+    main_parser = subparsers.add_parser("run", help="Paint set of child phages with parents")
+    main_parser.add_argument("-d", "--dataset", type=str, default="fromageries",
                         help="Test dataset choice")
-    parser.add_argument("-p", "--populations", type=str, nargs="+",
+    main_parser.add_argument("-p", "--populations", type=str, nargs="+",
                         help="All populations (fasta)")
-    parser.add_argument("-c", "--children", type=str, nargs="+",
+    main_parser.add_argument("-c", "--children", type=str, nargs="+",
                         help="Children sequences within the population (list of glob pattern)")
-    parser.add_argument("--exclude", type=str, nargs="+",
+    main_parser.add_argument("--exclude", type=str, nargs="+",
                         help="Files to exclude from the population (list of glob pattern)")
-    parser.add_argument("--aligner", type=str, default="blastn", choices=["blastn", "minimap2"],
+    main_parser.add_argument("--aligner", type=str, default="blastn", choices=["blastn", "minimap2"],
                         help="Alignment tool")    
-    parser.add_argument("--outdir", type=str, default="/tmp/cedric/modular_painting/output",
+    main_parser.add_argument("--outdir", type=str, default="/tmp/cedric/modular_painting/output",
                         help="Output folder")
-    parser.add_argument("--min-length", type=int, default=5000,
+    main_parser.add_argument("--min-length", type=int, default=5000,
                         help="Minimum contig length")
-    parser.add_argument("--min-id", type=float, default=0.9,
+    main_parser.add_argument("--min-id", type=float, default=0.9,
                         help="Minimum sequence identity")
-    parser.add_argument("--min-nw-id", type=float, default=0.8,
+    main_parser.add_argument("--min-nw-id", type=float, default=0.8,
                         help="Minimum sequence identity for gap closing")
-    parser.add_argument("--min-module-size", type=int, default=40,
+    main_parser.add_argument("--min-module-size", type=int, default=40,
                         help="Minimum size of a module/HSP")
-    parser.add_argument("--arc-eq-diffs", type=int, default=15,
+    main_parser.add_argument("--arc-eq-diffs", type=int, default=15,
                         help="Maximum distance between modules boundaries to consider them identical.")
-    parser.add_argument("--clustering-feature", type=str, default="breakpoint", choices=["breakpoint", "recombination"],
+    main_parser.add_argument("--clustering-feature", type=str, default="breakpoint", choices=["breakpoint", "recombination"],
                         help="Feature to use to cluster phages")
-    parser.add_argument("--clustering-gamma", type=float, default=0.5,
+    main_parser.add_argument("--clustering-gamma", type=float, default=0.5,
                         help="Cluster density")
-    parser.add_argument("--use-ground-truth", action="store_true",
-                        help="argument to remove later after the paper is published")
-    parser.add_argument("--resume", action="store_true",
+    main_parser.add_argument("--resume", action="store_true",
                         help="Resume analysis if files already exist in output folder")
-    parser.add_argument("--rename", action="store_true",
+    main_parser.add_argument("--rename", action="store_true",
                         help="Rename contigs")
-    parser.add_argument("--threads", type=int, default=20,
+    main_parser.add_argument("--threads", type=int, default=20,
                         help="Number of threads for alignment")
+
+    # Simulation
+    sim_parser = subparsers.add_parser("simulate", help="Simulate recombinant populations")
+    sim_parser.add_argument("--id", type=int, default=0)
+    sim_parser.add_argument("--outdir", type=str, default=TEST_DIR)
+    sim_parser.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
+    sim_parser.add_argument("--num-variants-range", type=int, nargs=2, default=(5, 10))        
+    sim_parser.add_argument("--n-modules", type=int, default=30)        
+    sim_parser.add_argument("--n-forefathers", type=int, default=10)        
+    sim_parser.add_argument("--n-subpopulations", type=int, default=3)
+    sim_parser.add_argument("--n-rc", type=int, default=20)
+    
     args = parser.parse_args()
+    
+    if args.cmd == "run":
+        args = setup_populations(args)
+    elif args.cmd == "simulate":
+        args.outdir = Path(args.outdir, f"sim.{args.id}")
 
+    # Prepare outputs
     args.outdir = Path(args.outdir)
-    args.outdir.mkdir(exist_ok=True)
+    args.outdir.mkdir(exist_ok=True, parents=True)
 
+    return args
+
+def setup_populations(args):
     if not (args.populations or args.children):
         args.populations = sorted(Path(TEST_DIR, args.dataset).glob("*.fasta"))
 
@@ -59,9 +82,6 @@ def parse_args():
             args.children = ["fromagerie_3"]
         elif "sim" in args.dataset:
             args.children = ["children"]
-        elif "delong" in args.dataset:
-            args.rename = True
-            args.children = ["D025"]
         else:
             raise ValueError(f"Unknown dataset {args.dataset}")
     else:
@@ -109,8 +129,8 @@ def setup_logger(name, log_file, level=logging.INFO):
 
         # Create a Formatter for formatting the log messages
         formatter = logging.Formatter(
-            '{asctime} (Mem:{mem}) <{name}> {levelname}: {message}',
-            '%H:%M:%S',
+            "{asctime} (Mem:{mem}) <{name}> {levelname}: {message}",
+            "%H:%M:%S",
             style="{"
         )
 
@@ -141,7 +161,7 @@ class MemoryTracer(logging.Filter):
         process = psutil.Process()
         mem = process.memory_full_info()
 
-        if hasattr(mem, 'pss'):
+        if hasattr(mem, "pss"):
             mem = mem.pss
         else: # No PSS info for MacOS
             mem = mem.rss
@@ -156,6 +176,6 @@ class MemoryTracer(logging.Filter):
             except psutil.AccessDenied:
                 pass
 
-        record.mem = f'{mem/2**30:>5.1f} GB'
+        record.mem = f"{mem/2**30:>5.1f} GB"
 
         return True
