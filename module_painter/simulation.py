@@ -1,4 +1,4 @@
-import argparse
+import logging
 from copy import deepcopy
 from pathlib import Path
 
@@ -6,27 +6,11 @@ import numpy as np
 from Bio import SeqIO
 
 
+logger = logging.getLogger("module-painter")
+
 np.random.seed(123)
 
-TEST_DIR = Path(Path(__file__).resolve().parent.parent, "tests", "sim")
 NUCL = list("ACGT")
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--id', type=int, default=0)
-    parser.add_argument('--sim-dir', type=str, default=TEST_DIR)
-    parser.add_argument('--module-size-range', type=int, nargs=2, default=(200, 500))
-    parser.add_argument('--num-variants-range', type=int, nargs=2, default=(5, 10))        
-    parser.add_argument('--n-modules', type=int, default=30)        
-    parser.add_argument('--n-forefathers', type=int, default=10)        
-    parser.add_argument('--n-subpopulations', type=int, default=3)
-    parser.add_argument('--n-rc', type=int, default=20)
-    args = parser.parse_args()
-
-    args.sim_dir = Path(args.sim_dir).with_suffix(f".{args.id}")
-    args.sim_dir.mkdir(exist_ok=True)
-
-    return args
 
 class color:
     BOLD = '\033[1m'
@@ -48,7 +32,7 @@ class color:
 def show_rc(parent, pos, n=1):
     parent_str = [str(m) for m in parent]
     parent_str[pos] = color.display(parent_str[pos], n=n, bold=True, underlined=True)
-    print("|".join(parent_str))
+    logger.debug("|".join(parent_str))
 
 def generate_forefathers(n_variants, n=10):
     forefathers = []
@@ -64,7 +48,7 @@ def partition_population(individuals, n_partitions=2):
 def recombine_population(population, n_recombinations, return_rc=False):
     rcs = []
     for i in range(n_recombinations):
-        print(f"======== Iteration {i:,} =======")
+        logger.debug(f"======== Iteration {i:,} =======")
         (i1, i2) = np.random.choice(len(population), 2, replace=False)
         (p1, p2) = (population[i1], population[i2])
         pos = recombine(p1, p2)
@@ -79,7 +63,7 @@ def recombine(s1, s2, show=True):
     if show:
         for s in [s1, s2]:
             show_rc(s, pos)
-        print("-"*30)
+        logger.debug("-"*30)
     (s2[pos], s1[pos]) = (s1[pos], s2[pos])
     if show:
         for s in [s1, s2]:
@@ -93,26 +77,32 @@ def generate_module(min_size, max_size, n_variants):
 
     return tuple(variants)
 
-if __name__ == '__main__':
-    args = parse_args()
+def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=None,
+             n_subpopulations=None, module_size_range=None, outdir=None, **kwargs):
 
-    n_variants = [np.random.randint(*args.num_variants_range)
-                  for _ in range(args.n_modules)]
-    forefathers = generate_forefathers(n_variants, n=args.n_forefathers)
-    forefathers = partition_population(forefathers, args.n_subpopulations)
-    children = [recombine_population(deepcopy(subpop), args.n_rc) for subpop in forefathers]
+    logger.info(f"#Forefathers: {n_forefathers}")
+    logger.info(f"#Subpopulations: {n_subpopulations}")
+    logger.info(f"#Variants per module: {'-'.join(map(str, num_variants_range))}")
+    logger.info(f"Module size range: {'-'.join(map(str, module_size_range))}")    
+    
+    n_variants = [np.random.randint(*num_variants_range)
+                  for _ in range(n_modules)]
+    forefathers = generate_forefathers(n_variants, n=n_forefathers)
+    forefathers = partition_population(forefathers, n_subpopulations)
+    children = [recombine_population(deepcopy(subpop), n_rc) for subpop in forefathers]
 
     forefathers = {f"F{i}.{k}": forefather
                    for k, subpop in enumerate(forefathers)
                    for i, forefather in enumerate(subpop)}
+
     children = {f"C{i}.{k}": child
                 for k, subpop in enumerate(children)
                 for i, child in enumerate(subpop)}
-    
-    modules = [generate_module(*args.module_size_range, ni) for ni in n_variants]
-    junctions = [generate_module(*args.module_size_range, 1)[0] for _ in n_variants]
 
-    with open(f"{args.sim_dir}/forefathers.fasta", "w") as writer:
+    modules = [generate_module(*module_size_range, ni) for ni in n_variants]
+    junctions = [generate_module(*module_size_range, 1)[0] for _ in n_variants]
+
+    with open(f"{outdir}/forefathers.fasta", "w") as writer:
         for (seq_id, forefather) in forefathers.items():
             meta = "-".join(map(str, forefather))
             seq = ""
@@ -120,10 +110,30 @@ if __name__ == '__main__':
                 seq += (junction + modules[pos][variant])
             writer.write(f">{seq_id} {meta}\n{seq}\n")
 
-    with open(f"{args.sim_dir}/children.fasta", "w") as writer:
+    with open(f"{outdir}/children.fasta", "w") as writer:
         for (seq_id, child) in children.items():
             meta = "-".join(map(str, child))
             seq = ""
             for pos, (variant, junction) in enumerate(zip(child, junctions)):
                 seq += (junction + modules[pos][variant])
             writer.write(f">{seq_id} {meta}\n{seq}\n")
+
+    # Some more logging info
+    logger.debug("====Forefathers====")
+    cmap = {seq_id: i for (i, seq_id) in enumerate(forefathers)}
+
+    for (seq_id, forefather) in forefathers.items():
+        f_str =  f"{seq_id}: " + " | ".join(map(str, forefather))
+        logger.debug(color.display(f_str, n=cmap[seq_id]))
+
+    logger.debug("====Children====")
+    for (seq_id, child) in children.items():
+        cluster = seq_id.split(".")[-1]
+        forefather_cluster = [it for it in forefathers.items()
+                              if it[0].endswith(cluster)]
+        c_str = []
+        for j, variant in enumerate(child):
+            parent = next(it[0] for it in forefather_cluster if it[1][j] == variant)
+            c_str.append(color.display(variant, n=cmap[parent]))
+        logger.debug(f"{seq_id}: " + " | ".join(c_str))
+            
