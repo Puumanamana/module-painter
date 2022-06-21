@@ -67,6 +67,7 @@ def minimap2(query, ref, **kwargs):
         if not isinstance(v, bool):
             cmd.append(str(v))
 
+    logger.info(f"Running: {' '.join(cmd)}")
     aln_str = sp.check_output(
         cmd,
         text=True,
@@ -98,18 +99,18 @@ def blastn(query, ref, outdir=None, **blast_opt):
     db_prefix = Path(blast_dir, ref.stem)
     if not Path(db_prefix.with_suffix('.nhr')).is_file():
         make_db = NcbimakeblastdbCommandline(dbtype="nucl", input_file=ref, out=db_prefix)
-        print(make_db)
+        logger.info(make_db)
         make_db()
 
     # Run blast
     blast_file = Path(blast_dir, f'{query.stem}_on_{ref.stem}.tsv')
-    if not blast_file.is_file():
-        fmt = " ".join(BLAST_HEADER)
-        blastn_on_db = NcbiblastnCommandline(
-            query=query, db=db_prefix, out=blast_file, outfmt=f'6 {fmt}', **blast_opt
-        )
-        print(blastn_on_db)
-        blastn_on_db()
+
+    fmt = " ".join(BLAST_HEADER)
+    blastn_on_db = NcbiblastnCommandline(
+        query=query, db=db_prefix, out=blast_file, outfmt=f'6 {fmt}', **blast_opt
+    )
+    logger.info(blastn_on_db)
+    blastn_on_db()
 
     alns = pd.read_csv(blast_file, sep="\t", header=None, names=BLAST_HEADER)
     alns.pident = alns.pident/100.

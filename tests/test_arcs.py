@@ -36,8 +36,8 @@ def test_split_at_end():
     arc = Arc(90, 110, 100)
     arc1, arc2 = arc.split_at_end()
 
-    assert (arc1.start, arc1.end) == (90, 99)
-    assert (arc2.start, arc2.end) == (0, 10)
+    assert (arc1.sstart, arc1.send) == (90, 99)
+    assert (arc2.sstart, arc2.send) == (0, 10)
 
 def test_is_embedded_no_wrap():
     arc1 = Arc(10, 110, 100)
@@ -102,7 +102,7 @@ def test_try_merge_equal():
     arc1.try_merge_with(arc2)
 
     assert arc1.flagged and not arc2.flagged
-    assert arc2.meta == {"A", "B"}
+    assert arc2.qacc == {"A", "B"}
 
 def test_try_merge_different():
     arc1 = Arc(10, 20, 50)
@@ -114,34 +114,34 @@ def test_try_merge_different():
 def test_try_fuse_overlap():
     arc1 = Arc(10, 20, 50, {"A"})
     arc2 = Arc(15, 30, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=5, nw=False)
+    arc1.try_fuse_with(arc2, max_dist=5, skip_nw=True)
     
     assert arc1.flagged and not arc2.flagged
-    assert arc2.meta == {"A"}
+    assert arc2.qacc == {"A"}
     assert arc2.bounds() == (10, 30)
 
 def test_try_fuse_close():
     arc1 = Arc(10, 20, 50, {"A"})
     arc2 = Arc(26, 30, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=10, nw=False)
+    arc1.try_fuse_with(arc2, max_dist=10, skip_nw=True)
     
     assert arc1.flagged and not arc2.flagged
-    assert arc2.meta == {"A"}
+    assert arc2.qacc == {"A"}
     assert arc2.bounds() == (10, 30)
     
 def test_try_fuse_wrap():
     arc1 = Arc(30, 55, 50, {"A"})
     arc2 = Arc(7, 15, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=10, nw=False)
+    arc1.try_fuse_with(arc2, max_dist=10, skip_nw=True)
     
     assert arc1.flagged and not arc2.flagged
-    assert arc2.meta == {"A"}
+    assert arc2.qacc == {"A"}
     assert arc2.bounds() == (30, 65)
     
 def test_try_fuse_far():
     arc1 = Arc(10, 20, 50, {"A"})
     arc2 = Arc(26, 30, 50, {"A", "B"})
-    arc1.try_fuse_with(arc2, max_dist=2, nw=False)
+    arc1.try_fuse_with(arc2, max_dist=2, skip_nw=True)
     
     assert not arc1.flagged and not arc2.flagged
 

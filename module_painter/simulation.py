@@ -8,8 +8,6 @@ from Bio import SeqIO
 
 logger = logging.getLogger("module-painter")
 
-np.random.seed(123)
-
 NUCL = list("ACGT")
 
 class color:
@@ -91,11 +89,11 @@ def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=N
     forefathers = partition_population(forefathers, n_subpopulations)
     children = [recombine_population(deepcopy(subpop), n_rc) for subpop in forefathers]
 
-    forefathers = {f"F{i}.{k}": forefather
+    forefathers = {f"F{k}.{i}": forefather
                    for k, subpop in enumerate(forefathers)
                    for i, forefather in enumerate(subpop)}
 
-    children = {f"C{i}.{k}": child
+    children = {f"C{k}.{i}": child
                 for k, subpop in enumerate(children)
                 for i, child in enumerate(subpop)}
 
@@ -128,9 +126,9 @@ def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=N
 
     logger.debug("====Children====")
     for (seq_id, child) in children.items():
-        cluster = seq_id.split(".")[-1]
+        cluster = seq_id.split(".")[0][1:]
         forefather_cluster = [it for it in forefathers.items()
-                              if it[0].endswith(cluster)]
+                              if it[0][1:].startswith(cluster)]
         c_str = []
         for j, variant in enumerate(child):
             parent = next(it[0] for it in forefather_cluster if it[1][j] == variant)

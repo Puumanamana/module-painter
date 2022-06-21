@@ -11,20 +11,20 @@ def cluster_phages(graphs, gamma=0.75, feature="breakpoints", outdir=None):
     rc = find_recombinations(bk)
 
     # save recombinations to file
-    rc_summary = rc[["ref", "parents"]].value_counts().unstack(fill_value=0)
+    rc_summary = rc[["sacc", "parents"]].value_counts().unstack(fill_value=0)
     rc_summary.to_csv(f"{outdir}/recombinations_summary.csv")
 
     # Make feature graph before clustering 
     recomb_graph = igraph.Graph()
-    recomb_graph.add_vertices([graph["ref"] for graph in graphs])
+    recomb_graph.add_vertices([graph["sacc"] for graph in graphs])
 
     if feature == "breakpoint":
-        edges = bk.groupby(["bk_id", "parents"]).ref.agg(list)
+        edges = bk.groupby(["bk_id", "parents"]).sacc.agg(list)
     else:
-        edges = rc.groupby(["bk_ids", "parents"]).ref.agg(list)
+        edges = rc.groupby(["bk_ids", "parents"]).sacc.agg(list)
 
-    for refs in edges.values:
-        for (r1, r2) in combinations(refs, 2):
+    for saccs in edges.values:
+        for (r1, r2) in combinations(saccs, 2):
             recomb_graph.add_edge(r1, r2)
 
     communities = recomb_graph.community_leiden(

@@ -16,7 +16,8 @@ def parse_args():
     subparsers = parser.add_subparsers(help="sub-command help", dest="cmd")
 
     # Main parser
-    main_parser = subparsers.add_parser("run", help="Paint set of child phages with parents")
+    main_parser = subparsers.add_parser("run", help="Paint set of child phages with parents",
+                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     main_parser.add_argument("-d", "--dataset", type=str, default="fromageries",
                         help="Test dataset choice")
     main_parser.add_argument("-p", "--populations", type=str, nargs="+",
@@ -35,13 +36,15 @@ def parse_args():
                         help="Minimum sequence identity")
     main_parser.add_argument("--min-nw-id", type=float, default=0.8,
                         help="Minimum sequence identity for gap closing")
+    main_parser.add_argument("--skip-nw", action="store_true",
+                        help="Skip NW alignment for coverage refinement")
     main_parser.add_argument("--min-module-size", type=int, default=40,
                         help="Minimum size of a module/HSP")
-    main_parser.add_argument("--arc-eq-diffs", type=int, default=15,
+    main_parser.add_argument("--arc-eq-diffs", type=int, default=10,
                         help="Maximum distance between modules boundaries to consider them identical.")
     main_parser.add_argument("--clustering-feature", type=str, default="breakpoint", choices=["breakpoint", "recombination"],
                         help="Feature to use to cluster phages")
-    main_parser.add_argument("--clustering-gamma", type=float, default=0.5,
+    main_parser.add_argument("--clustering-gamma", type=float, default=0.2,
                         help="Cluster density")
     main_parser.add_argument("--resume", action="store_true",
                         help="Resume analysis if files already exist in output folder")
@@ -51,22 +54,20 @@ def parse_args():
                         help="Number of threads for alignment")
 
     # Simulation
-    sim_parser = subparsers.add_parser("simulate", help="Simulate recombinant populations")
-    sim_parser.add_argument("--id", type=int, default=0)
-    sim_parser.add_argument("--outdir", type=str, default=TEST_DIR)
+    sim_parser = subparsers.add_parser("simulate", help="Simulate recombinant populations",
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    sim_parser.add_argument("-m", "--n-modules", type=int, default=30)        
+    sim_parser.add_argument("-n", "--n-forefathers", type=int, default=10)        
+    sim_parser.add_argument("-k", "--n-subpopulations", type=int, default=3)
+    sim_parser.add_argument("-r", "--n-rc", type=int, default=20)
+    sim_parser.add_argument("-o", "--outdir", type=str, default=TEST_DIR)
     sim_parser.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
     sim_parser.add_argument("--num-variants-range", type=int, nargs=2, default=(5, 10))        
-    sim_parser.add_argument("--n-modules", type=int, default=30)        
-    sim_parser.add_argument("--n-forefathers", type=int, default=10)        
-    sim_parser.add_argument("--n-subpopulations", type=int, default=3)
-    sim_parser.add_argument("--n-rc", type=int, default=20)
-    
+
     args = parser.parse_args()
-    
+
     if args.cmd == "run":
         args = setup_populations(args)
-    elif args.cmd == "simulate":
-        args.outdir = Path(args.outdir, f"sim.{args.id}")
 
     # Prepare outputs
     args.outdir = Path(args.outdir)
@@ -78,8 +79,10 @@ def setup_populations(args):
     if not (args.populations or args.children):
         args.populations = sorted(Path(TEST_DIR, args.dataset).glob("*.fasta"))
 
-        if args.dataset == "fromageries" and "sim" not in args.dataset:
+        if args.dataset == "fromageries":
             args.children = ["fromagerie_3"]
+        elif "delong" in args.dataset:
+            args.children = ["D117"]
         elif "sim" in args.dataset:
             args.children = ["children"]
         else:

@@ -30,14 +30,14 @@ def is_interfering(parents, freqs):
 def summarize_breakpoints(graphs, n=10, parent_pairs=False, parents=False):
     bk = get_breakpoints(graphs)
     print("\n======= Recurrent breakpoints =======")
-    bk_prev = bk.groupby(["parents", "bk_id"]).ref.agg([set])
+    bk_prev = bk.groupby(["parents", "bk_id"]).sacc.agg([set])
     bk_prev["len"] = bk_prev["set"].apply(len)
     bk_prev = bk_prev.sort_values(by="len", ascending=False).drop(columns="set")
     print(bk_prev.head(n))
 
     if parent_pairs:
         print("\n======= Recurrent parent pairs =======")
-        pp_prev = bk.groupby("parents").ref.agg([set])
+        pp_prev = bk.groupby("parents").sacc.agg([set])
         pp_prev["len"] = pp_prev["set"].apply(len)
         pp_prev.sort_values(by="len", ascending=False, inplace=True)
         print(pp_prev.head(n))
@@ -45,7 +45,7 @@ def summarize_breakpoints(graphs, n=10, parent_pairs=False, parents=False):
     if parents:
         print("\n======= Recurrent parents =======")
         bk.parents = bk.parents.str.split("/")
-        bk = bk.explode("parents").groupby("parents").ref.agg([set])
+        bk = bk.explode("parents").groupby("parents").sacc.agg([set])
         bk["len"] = bk["set"].apply(len)
         bk.sort_values(by="len", ascending=False, inplace=True)
         print(bk.head(n))
@@ -55,17 +55,17 @@ def get_breakpoints(graphs):
 
     for graph in graphs:
         for e in graph.es:
-            breakpoints.append([graph["ref"], e["bk_id"], e["parents"], e["pos"]])
+            breakpoints.append([graph["sacc"], e["bk_id"], e["parents"], e["pos"]])
 
-    breakpoints = pd.DataFrame(breakpoints, columns=["ref", "bk_id", "parents", "pos"])
-    breakpoints["mult"] = breakpoints.duplicated(subset=["ref", "pos"], keep=False)
+    breakpoints = pd.DataFrame(breakpoints, columns=["sacc", "bk_id", "parents", "pos"])
+    breakpoints["mult"] = breakpoints.duplicated(subset=["sacc", "pos"], keep=False)
 
     # Conditions for interference
     # the parent pair appears >1 time on the same reference with another parent pair with even number of breakpoints
-    # 1) compute freqs = Counter[(ref, parent_pair) for ...]
-    # 2) groupby(["ref", "bk_id"]).parents -> agg(lambda x: freqs[x]))
-    freqs_per_ref = breakpoints[["ref", "parents"]].value_counts()
-    breakpoints["interfere"] = breakpoints.groupby(["ref", "bk_id"]).parents.transform(is_interfering, freqs_per_ref)
+    # 1) compute freqs = Counter[(sacc, parent_pair) for ...]
+    # 2) groupby(["sacc", "bk_id"]).parents -> agg(lambda x: freqs[x]))
+    freqs_per_sacc = breakpoints[["sacc", "parents"]].value_counts()
+    breakpoints["interfere"] = breakpoints.groupby(["sacc", "bk_id"]).parents.transform(is_interfering, freqs_per_sacc)
 
     return breakpoints
 
@@ -78,32 +78,32 @@ def find_recombinations(bk):
         return [tuple(sorted(xi)) for xi in combinations(set(x), 2)]
 
     # Get all possible recombinations
-    rc = bk.groupby(["ref", "parents"]).bk_id.agg(get_sorted_recombs)
+    rc = bk.groupby(["sacc", "parents"]).bk_id.agg(get_sorted_recombs)
     # Reformat
     rc = rc.explode().dropna().reset_index().rename(columns=dict(bk_id="bk_ids"))
 
-    mult = bk.loc[bk.mult].set_index(["ref", "bk_id"]).sort_index().index
-    rc["mult"] = [any((ref, bk_id) in mult for bk_id in bk_ids)
-                  for (ref, bk_ids) in rc[['ref', 'bk_ids']].values]
+    mult = bk.loc[bk.mult].set_index(["sacc", "bk_id"]).sort_index().index
+    rc["mult"] = [any((sacc, bk_id) in mult for bk_id in bk_ids)
+                  for (sacc, bk_ids) in rc[['sacc', 'bk_ids']].values]
 
-    interfere = bk.loc[bk.interfere].set_index(["ref", "bk_id"]).sort_index().index
-    rc["interference"] = [sum((ref, bk_id) in interfere for bk_id in bk_ids)
-                         for (ref, bk_ids) in rc[['ref', 'bk_ids']].values]
+    interfere = bk.loc[bk.interfere].set_index(["sacc", "bk_id"]).sort_index().index
+    rc["interference"] = [sum((sacc, bk_id) in interfere for bk_id in bk_ids)
+                         for (sacc, bk_ids) in rc[['sacc', 'bk_ids']].values]
     return rc
 
 def filter_recombinations(rc, bk):
     # Compute recombinations metrics
     scores = rc[rc.mult].groupby(["parents", "bk_ids"]).agg(dict(
-        ref=lambda x: len(set(x)),
+        sacc=lambda x: len(set(x)),
         interference=sum
-    )).rename(columns=dict(ref="rc_prev"))
+    )).rename(columns=dict(sacc="rc_prev"))
 
     # Filter based on: 1) prevalence 2) minimum interference
     scores = scores[scores.rc_prev==scores.rc_prev.max()]
     scores = scores[scores.interference==scores.interference.min()]
 
     # 3) on each breakpoint
-    bk_abund = bk.groupby(["parents", "bk_id"]).ref.agg(len).to_dict()
+    bk_abund = bk.groupby(["parents", "bk_id"]).sacc.agg(len).to_dict()
     scores["bk_abund"] = [sum(bk_abund[(parents, bk_id)] for bk_id in bk_ids)
                           for (parents, bk_ids) in scores.index]
     # Filter based on breakpoints
@@ -113,7 +113,7 @@ def filter_recombinations(rc, bk):
     return scores
 
 def filter_breakpoints(bk):
-    scores = bk[bk.mult].groupby(["parents", "bk_id"]).ref.agg(
+    scores = bk[bk.mult].groupby(["parents", "bk_id"]).sacc.agg(
         bk_prev=lambda x: len(set(x))
     )
     # Filter based on prevalence

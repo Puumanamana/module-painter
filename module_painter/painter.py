@@ -30,20 +30,17 @@ TRUTH = dict(
 )
 
 ALN_PARAMS = dict(
-    minimap2={"z": "50,50", "N": 50, "U": 100,
+    minimap2={"z": "50,50", "N": 100, "U": 100,
               "no-long-join": True, "c": True, "P": True},
     blastn={"gapopen": 5, "gapextend": 2}
 )
 
 def paint(parents=None, children=None, outdir=None, resume=False, rename=False, aligner="minimap2",
-          min_length=0, min_module_size=0, min_id=0.9, arc_eq_diffs=0, min_nw_id=0.8,
-          clustering_feature="breakpoint", clustering_gamma=0.5,
+          min_length=0, min_module_size=0, min_id=0.9, arc_eq_diffs=0, min_nw_id=0.8, skip_nw=False,
+          clustering_feature="breakpoint", clustering_gamma=0.2,
           threads=20, **kwargs):
 
     logger = logging.getLogger("module-painter")
-    logger.info("Starting module-painter")
-    logger.info(f"Parent files: {[str(x) for x in parents]}")
-    logger.info(f"Children files: {[str(x) for x in children]}")
 
     populations = [
         concatenate_fasta(*parents, outdir=outdir, min_length=min_length,
@@ -51,6 +48,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
         concatenate_fasta(*children, outdir=outdir, min_length=min_length,
                           resume=resume, rename=rename, prefix="c")
     ]
+    seq_data = {seq.id: seq.seq for fasta in populations for seq in SeqIO.parse(fasta, "fasta")}
 
     # Raw alignment
     aln_file = Path(outdir, f"{aligner}_{populations[0].stem}_on_{populations[1].stem}.csv")
@@ -65,61 +63,32 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
         alns.to_csv(aln_file)
 
     alns = filter_alignments(alns, min_id=min_id)
-
-    if alns.empty:
-        return
         
-    seq_data = {seq.id: seq.seq for fasta in populations for seq in SeqIO.parse(fasta, "fasta")}
-
-    logger.info("Applying coverage rules for all children")
+    logger.info("Applying coverage rules")
     coverages = []
     for child in alns.sacc.unique():
-        aln = alns[alns.sacc==child]
-        if aln.qacc.nunique() == 1:
-            logger.warning(f"Too few parents cover {child}. Skipping")
-            continue
-        logger.debug(f"Processing {child}")
-        # if args.use_ground_truth:
-        #     aln = alns[alns.qacc.isin(set(TRUTH[child]))]
-
-        coverage = Coverage.from_pandas(aln, size=aln.slen.iloc[0])
-        # sticky boundaries
-        coverage.sync_boundaries("start", arc_eq_diffs)
-        coverage.sync_boundaries("end", arc_eq_diffs)
-        # Fuse intervals from the same parents if they are close
-        coverage.fuse_close_modules(seq_data,
-                                    max_dist=min_module_size,
-                                    min_size_ratio=0.8,
-                                    min_nw_id=min_nw_id)
-        # simplify coverage by grouping equal intervals
-        coverage.merge_equal_intervals()
-        # Remove embedded intervals
-        coverage.simplify_embedded()
-        # Fill all gaps
-        coverage.fill_gaps(min_module_size)
-
-        logger.debug(coverage.show())
+        cov_file = Path(f"{outdir}/simplified_coverage/{child}.csv")
+        if resume and cov_file.is_file():
+            logger.info(f"{child} already processed. Skipping")
+            coverage = Coverage.from_csv(cov_file)
+        else:
+            coverage = Coverage.from_pandas(alns[alns.sacc==child])
+            coverage.apply_rules(arc_eq_diffs, min_module_size, seq_data, min_nw_id, skip_nw=skip_nw)
+            coverage.write_csv(f"{outdir}/simplified_coverage")
 
         if len(coverage) < 2:
-            logger.debug(f"Discarding {coverage.ref} (only one parent left)")
-            continue
-        # Lee and Lee
-        coverage.get_minimal_coverage()
-        coverages.append(coverage)
+            logger.debug(f"Discarding {coverage.sacc} (only one parent left)")
+        else:
+            coverages.append(coverage)
 
-    logger.info(f"{len(coverages)} children remaining.")
-        
-    if not coverages:
-        return
+    if not coverages: return
 
-    tmp = {c.ref: c for c in coverages}
-
-    logger.info("Mapping missing parents")
+    logger.info(f"Mapping missing parents (n_children={len(coverages)})")
     map_missing_parents(populations[1], coverages, outdir=outdir, threads=threads)
 
     graph_dir = Path(outdir, "overlap_graphs")
     graph_dir.mkdir(exist_ok=True)
-    graph_paths = {cov.ref: Path(graph_dir, f"{cov.ref}.pickle") for cov in coverages}
+    graph_paths = {cov.sacc: Path(graph_dir, f"{cov.sacc}.pickle") for cov in coverages}
 
     if resume and all(f.is_file() for f in graph_paths.values()):
         overlap_graphs = [Graph.Read_Pickle(f) for f in graph_paths.values()]
@@ -136,7 +105,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
         summarize_breakpoints(overlap_graphs)
 
         for graph in overlap_graphs:
-            graph.write_pickle(graph_paths[graph["ref"]])
+            graph.write_pickle(graph_paths[graph["sacc"]])
     
     logger.info(f"Clustering (feature: {clustering_feature})")
     clusters = cluster_phages(overlap_graphs, gamma=clustering_gamma, feature=clustering_feature, outdir=outdir)
@@ -146,7 +115,8 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
         logger.warning("No species cluster identified.")
         return
 
-    logger.info("\n".join(",".join(c) for c in sorted(clusters, key=lambda x: -len(x))))
+    for i, c in enumerate(sorted(clusters, key=lambda x: -len(x))):
+        logger.info(f"Cluster #{i}: {','.join(c)}")
 
     logger.info(f"Interactive plot in {outdir}")
     display_genomes(overlap_graphs, clusters=clusters, norm=True, outdir=outdir)

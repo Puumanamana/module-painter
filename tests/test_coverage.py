@@ -25,7 +25,7 @@ def test_sort():
         Arc(65, 80, 100, {"F"})
     )
     cov.sort()
-    names = "".join(par for arc in cov.arcs for par in arc.meta)
+    names = "".join(par for arc in cov.arcs for par in arc.qacc)
     assert names == "BACDEF"
 
 def test_get_all_parents():
@@ -60,11 +60,11 @@ def test_sync_boundaries():
         Arc(16, 40, 100),        
     )
 
-    cov.sync_boundaries("start", 3)
+    cov.sync_boundaries("sstart", 3)
 
-    assert cov.arcs[1].start == 0
-    assert cov.arcs[2].start == 0
-    assert cov.arcs[3].start == 11
+    assert cov.arcs[1].sstart == 0
+    assert cov.arcs[2].sstart == 0
+    assert cov.arcs[3].sstart == 11
 
 def test_fuse_modules():
     cov = Coverage(
@@ -77,11 +77,11 @@ def test_fuse_modules():
         Arc(7, 10, 20, {"C"}),
     )
     cov.sort()
-    cov.fuse_close_modules({}, max_dist=2, nw=False)
+    cov.fuse_close_modules({}, max_dist=2, skip_nw=True)
 
     assert len(cov) == 4
-    assert any(arc.bounds() == (0, 7) for arc in cov.arcs if arc.meta == {"A"})
-    assert any(arc.bounds() == (0, 7) for arc in cov.arcs if arc.meta == {"B"})
+    assert any(arc.bounds() == (0, 7) for arc in cov.arcs if arc.qacc == {"A"})
+    assert any(arc.bounds() == (0, 7) for arc in cov.arcs if arc.qacc == {"B"})
 
 def test_merge_equal_intervals():
     cov = Coverage(
@@ -91,8 +91,8 @@ def test_merge_equal_intervals():
     )
     cov.merge_equal_intervals()
     assert len(cov) == 2
-    assert cov.arcs[0].meta == {"A", "B"}
-    assert cov.arcs[1].meta == {"C"}
+    assert cov.arcs[0].qacc == {"A", "B"}
+    assert cov.arcs[1].qacc == {"C"}
 
 def test_fill_gaps():
     cov = Coverage(
@@ -103,7 +103,7 @@ def test_fill_gaps():
     cov.sort()
     cov.fill_gaps(2)
 
-    na_arc = [arc for arc in cov.arcs if "NA" in arc.meta]
+    na_arc = [arc for arc in cov.arcs if "NA" in arc.qacc]
     assert len(na_arc) == 1
     assert na_arc[0].bounds() == (7, 12)
     assert cov.arcs[0].bounds() == (0, 3)

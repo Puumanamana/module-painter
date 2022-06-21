@@ -8,6 +8,11 @@ def main():
     args = parse_args()
 
     logger = setup_logger('module-painter', Path(args.outdir, 'log.txt'))
+    logger.info(f"Starting module-painter {args.cmd}")
+
+    logger.debug("==== Parameters ====")
+    for k,v in vars(args).items():
+        logger.debug(f"{k}={v}")
     
     if args.cmd == "run":
         paint(**vars(args))

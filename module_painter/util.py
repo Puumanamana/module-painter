@@ -18,24 +18,24 @@ def subset_fasta(filename, subset_df, min_len=0, outprefix="/tmp"):
     output = Path(outprefix, Path(filename).name)
     output.parent.mkdir(exist_ok=True, parents=True)
 
-    refs = set(subset_df.index.get_level_values("ref"))
+    saccs = set(subset_df.index.get_level_values("sacc"))
 
     with open(filename, 'r') as reader, open(output, 'w') as writer:
         for (title, seq) in SimpleFastaParser(reader):
             seq_id = title.split()[0]
-            if seq_id not in refs:
+            if seq_id not in saccs:
                 continue
 
-            for (start, end) in subset_df.loc[seq_id].index:
-                metadata = str(subset_df.loc[(seq_id, start, end)])
+            for (sstart, send) in subset_df.loc[seq_id].index:
+                metadata = str(subset_df.loc[(seq_id, sstart, send)])
 
-                seq_len = end-start
+                seq_len = send-sstart
                 extension = 0
                 if seq_len < min_len: # artificially extend segment
                     extension = (min_len-seq_len + 1) // 2
 
-                subseq = wrapping_substr(seq, start-extension, end+extension+1)
-                writer.write(f">{seq_id}^{start}^{end}^{metadata}\n{subseq}\n")
+                subseq = wrapping_substr(seq, sstart-extension, send+extension+1)
+                writer.write(f">{seq_id}^{sstart}^{send}^{metadata}\n{subseq}\n")
 
     return output
 
@@ -90,7 +90,7 @@ def wrapping_substr(s, i, j):
         return s[i:] + s[:(j % len(s))]
     if 0 < j < len(s) < i:
         return s[(i % len(s)):j]
-    raise ValueError(f"String subset not defined for start={i} and end={j} (L={len(s)})")
+    raise ValueError(f"String subset not defined for sstart={i} and send={j} (L={len(s)})")
 
 def concatenate_fasta(*fa, outdir="./", resume=False, rename=False, prefix="seq", min_length=1000):
     if not rename and len(fa) == 1:

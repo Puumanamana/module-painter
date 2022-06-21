@@ -19,7 +19,7 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
         for graph in graphs
     ])
     breakpoint_data["eid"] = [eid for graph in graphs for eid in graph.es.indices]
-    breakpoint_data = breakpoint_data.groupby(["ref", "start", "end"]).eid.agg(
+    breakpoint_data = breakpoint_data.groupby(["sacc", "sstart", "send"]).eid.agg(
         lambda x: ";".join(map(str, x))
     )
 
@@ -32,32 +32,32 @@ def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None,
     vertices_array = np.array(homology_graph.vs['name'])
     for i, component in enumerate(homology_graph.components()):
         for vertex in component:
-            (ref, _, _, eids) = vertices_array[vertex].split("^")
+            (sacc, _, _, eids) = vertices_array[vertex].split("^")
             for eid in eids.split(";"):
-                bins[(ref, int(eid))] = i
+                bins[(sacc, int(eid))] = i
 
-    bins = pd.Series(bins, name="bin").rename_axis(index=["ref","eid"]).sort_index()
+    bins = pd.Series(bins, name="bin").rename_axis(index=["sacc","eid"]).sort_index()
 
     for graph in graphs:
-        if graph["ref"] in bins.index.get_level_values("ref"):
-            graph.es["bk_id"] = bins.loc[graph["ref"]].to_numpy()
+        if graph["sacc"] in bins.index.get_level_values("sacc"):
+            graph.es["bk_id"] = bins.loc[graph["sacc"]].to_numpy()
 
-def map_missing_parents(genomes, coverages, min_id=0.99, threads=1, outdir=None):
+def map_missing_parents(genomes, coverages, min_id=0.97, threads=1, outdir=None):
     """
     Check if the missing data is approximately the same in different genomes
     """
     # Intervals with fillers
     nocovs_df = pd.DataFrame([
-        [coverage.ref, arc.start, arc.end]
+        [coverage.sacc, arc.sstart, arc.send]
         for coverage in coverages
-        for arc in coverage.arcs if arc.meta == {"NA"}
-    ], columns=["ref", "start", "end"])
+        for arc in coverage.arcs if arc.qacc == {"NA"}
+    ], columns=["sacc", "sstart", "send"])
 
     if len(nocovs_df) == 0:
         return
 
     nocovs_df["uid"] = np.arange(len(nocovs_df))
-    nocovs_df = nocovs_df.set_index(["ref", "start", "end"]).uid.sort_index()
+    nocovs_df = nocovs_df.set_index(["sacc", "sstart", "send"]).uid.sort_index()
 
     # Save to fasta for minimap alignment
     nocov_fasta = subset_fasta(genomes, nocovs_df, outprefix=f"{outdir}/missing_data")
@@ -73,18 +73,18 @@ def map_missing_parents(genomes, coverages, min_id=0.99, threads=1, outdir=None)
     vertices_array = np.array(homology_graph.vs['name'])
     for i, component in enumerate(homology_graph.components()):
         for vertex in component:
-            (name, start, end, _) = vertices_array[vertex].split("^")
-            bin_mapping[(name, int(start), int(end))] = i
+            (name, sstart, send, _) = vertices_array[vertex].split("^")
+            bin_mapping[(name, int(sstart), int(send))] = i
 
     # Update NAs with corresponding bin id
     for coverage in coverages:
         found = defaultdict(int) # in case repeats happen
         for arc in coverage.arcs:
-            name = (coverage.ref, arc.start, arc.end)
+            name = (coverage.sacc, arc.sstart, arc.send)
             if name in bin_mapping:
                 bin_id = bin_mapping[name]
                 suffix = ""
                 if bin_id in found:
                     suffix = f"-repeat{found[bin_id]}"
-                arc.meta = {f"NA-{bin_id}{suffix}"}
+                arc.qacc = {f"NA-{bin_id}{suffix}"}
                 found[bin_id] += 1
