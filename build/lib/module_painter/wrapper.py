@@ -84,7 +84,7 @@ def minimap2(query, ref, **kwargs):
         alns[attr] -= 1
 
     logger.info(f"Found {alns.shape[0]:,} alignments with minimap2")
-    logger.info(f"Aligned: #children: {alns.sacc.nunique()}, #parents: {alns.qacc.nunique()}")
+    logger.info(f"#children: {alns.sacc.nunique()}, #parents: {alns.qacc.nunique()}")
 
     return alns
 
@@ -127,7 +127,7 @@ def blastn(query, ref, outdir=None, **blast_opt):
         alns[attr] -= 1
 
     logger.info(f"Found {alns.shape[0]:,} alignments with blastn")
-    logger.info(f"#Aligned: children: {alns.sacc.nunique()}, #parents: {alns.qacc.nunique()}")
+    logger.info(f"#children: {alns.sacc.nunique()}, #parents: {alns.qacc.nunique()}")
 
     return alns
 

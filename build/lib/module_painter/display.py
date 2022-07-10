@@ -40,7 +40,7 @@ def custom_cmap():
 def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
-def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
+def display_genomes(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
     graphs = {graph["sacc"]: graph for graph in graphs}
     graphs = [graphs[sacc] for cluster in clusters for sacc in cluster]
     
@@ -85,7 +85,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
     cmap = custom_cmap()
     
     for parent in data.parent.unique():
-        if "@" in parent:
+        if "NA" in parent:
             cmap[parent] = "gray"
     remaining_parents = set(data.parent.unique()).difference(cmap.keys())
     colors = get_palette(len(remaining_parents))
@@ -99,7 +99,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         data_c = data[data.sacc.isin(cluster)].copy()
         data_c["sacc_loc"] = pd.Categorical(data_c.sacc).codes
 
-        parents_all = {p for p in data_c.parent if "@" not in p}
+        parents_all = {p for p in data_c.parent if "NA" not in p}
        
         subplot_layer = []
 
@@ -115,7 +115,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
                 )
                 .opts(line_width=15, color=cmap[p],
                       tools=[hover],
-                      height=max(2, len(cluster))*100,
+                      height=len(cluster)*100 + 50*len(clusters),
                       default_tools=["box_zoom", "reset"])
             )
 
@@ -131,9 +131,9 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
 
         subplots.append(overlay)
         
-    seg = hv.Layout(subplots).opts(shared_axes=False).cols(1)
+    seg = hv.Layout(subplots).opts(shared_axes=True).cols(1)
 
     if fmt == "html":
         hv.save(seg, Path(outdir, "paintings.html"))
     else:
-        export_svg(hv.render(seg), filename=Path(outdir, "paintings.svg"))
+        export_svg(hv.render(seg), filename=Path(outdir, "painting.svg"))

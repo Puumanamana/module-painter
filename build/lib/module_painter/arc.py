@@ -179,7 +179,7 @@ class Arc:
         other.unflag()
         other.qacc = shared_qacc
 
-        # logger.debug(f"Fusing: {self.qacc}:{self.sstart:,}-{self.send:,} -> {other.qacc}:{other.sstart:,}-{other.send:,}")
+        logger.debug(f"Fusing: {self.qacc}:{self.sstart:,}-{self.send:,} -> {other.qacc}:{other.sstart:,}-{other.send:,}")
         
         if self.sstart < other.sstart: # General case: 1--1...2--2
             other.sstart = self.sstart

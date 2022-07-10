@@ -8,8 +8,10 @@ from module_painter.util import concatenate_fasta
 from module_painter.coverage import Coverage
 from module_painter.wrapper import blastn, minimap2, filter_alignments
 from module_painter.breakpoints import map_missing_parents, set_breakpoint_ids
-from module_painter.parent_selection import select_by_recombinations, select_by_breakpoints, get_breakpoints
-from module_painter.clustering import get_links
+from module_painter.parent_selection import summarize_breakpoints, select_by_recombinations, select_by_breakpoints
+from module_painter.clustering import cluster_phages
+from module_painter.display import display_genomes
+
 
 TRUTH = dict(
     R="MAJAM",
@@ -28,7 +30,7 @@ TRUTH = dict(
 )
 
 ALN_PARAMS = dict(
-    minimap2={"z": 50, "N": 100, "U": 100,
+    minimap2={"z": "50,50", "N": 100, "U": 100,
               "no-long-join": True, "c": True, "P": True},
     blastn={"gapopen": 5, "gapextend": 2}
 )
@@ -100,14 +102,22 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
         logger.info("Parent selection: by breakpoint")
         select_by_breakpoints(overlap_graphs)
 
+        summarize_breakpoints(overlap_graphs)
+
         for graph in overlap_graphs:
             graph.write_pickle(graph_paths[graph["sacc"]])
+    
+    logger.info(f"Clustering (feature: {clustering_feature})")
+    clusters = cluster_phages(overlap_graphs, gamma=clustering_gamma, feature=clustering_feature, outdir=outdir)
+    clusters = [c for c in clusters if len(c) > 1]
 
-    breakpoints = get_breakpoints(overlap_graphs)
-    links = get_links(breakpoints, feature=clustering_feature, outdir=outdir)
+    if not clusters:
+        logger.warning("No species cluster identified.")
+        return
 
-    return dict(
-        graphs=overlap_graphs,
-        breakpoints=breakpoints,
-        links=links
-    )
+    for i, c in enumerate(sorted(clusters, key=lambda x: -len(x))):
+        logger.info(f"Cluster #{i}: {','.join(c)}")
+
+    logger.info(f"Interactive plot in {outdir}")
+    display_genomes(overlap_graphs, clusters=clusters, norm=True, outdir=outdir, fmt=plot_fmt)
+

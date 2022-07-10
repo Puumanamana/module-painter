@@ -37,7 +37,7 @@ class Coverage:
     def __repr__(self, subset=None):
         if isinstance(subset, str):
             subset = set(subset)
-        display = [f"id: {self.sacc} (L={self.slen})"]
+        display = [f"Sacc: {self.sacc} (L={self.slen})"]
         for i, arc in enumerate(self.arcs):
             if subset is not None:
                 if not arc.qacc.intersection(subset):
@@ -109,7 +109,7 @@ class Coverage:
         
     def to_pandas(self):
         n = len(self)
-        data = {attr: np.zeros(n, dtype=int) for attr in ["sstart", "send", "qstart", "qend", "flag"]}
+        data = {attr: np.zeros(n) for attr in ["sstart", "send", "qstart", "qend", "flag"]}
         data["qacc"] = np.empty(n, dtype="<U32")
 
         for i, arc in enumerate(self.arcs):
@@ -152,7 +152,7 @@ class Coverage:
         breakpoints = zip(arcs[:-1], arcs[1:])
         
         if skip_na:
-            breakpoints = filter(lambda bk: all("@" not in arc.qacc for arc in bk), breakpoints)
+            breakpoints = filter(lambda bk: all("NA" not in arc.qacc for arc in bk), breakpoints)
         
         return breakpoints
 

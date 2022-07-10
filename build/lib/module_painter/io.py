@@ -18,19 +18,17 @@ def parse_args():
     # Main parser
     main_parser = subparsers.add_parser("run", help="Paint set of child phages with parents",
                                         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    main_parser.add_argument("--rotate-parent", action="store_true",
-                        help="Cluster datasets by rotating parent set")
-    main_parser.add_argument("-d", "--dataset", default="fromageries",
+    main_parser.add_argument("-d", "--dataset", type=str, default="fromageries",
                         help="Test dataset choice")
-    main_parser.add_argument("-p", "--populations", nargs="+",
+    main_parser.add_argument("-p", "--populations", type=str, nargs="+",
                         help="All populations (fasta)")
-    main_parser.add_argument("-c", "--children", nargs="*",
+    main_parser.add_argument("-c", "--children", type=str, nargs="+",
                         help="Children sequences within the population (list of glob pattern)")
-    main_parser.add_argument("--exclude", nargs="+",
+    main_parser.add_argument("--exclude", type=str, nargs="+",
                         help="Files to exclude from the population (list of glob pattern)")
-    main_parser.add_argument("--aligner", default="minimap2", choices=["blastn", "minimap2"],
+    main_parser.add_argument("--aligner", type=str, default="blastn", choices=["blastn", "minimap2"],
                         help="Alignment tool")    
-    main_parser.add_argument("--outdir", default="/tmp/cedric/modular_painting/output",
+    main_parser.add_argument("--outdir", type=str, default="/tmp/cedric/modular_painting/output",
                         help="Output folder")
     main_parser.add_argument("--min-length", type=int, default=5000,
                         help="Minimum contig length")
@@ -42,19 +40,17 @@ def parse_args():
                         help="Skip NW alignment for coverage refinement")
     main_parser.add_argument("--min-module-size", type=int, default=40,
                         help="Minimum size of a module/HSP")
-    main_parser.add_argument("--arc-eq-diffs", type=int, default=30,
+    main_parser.add_argument("--arc-eq-diffs", type=int, default=10,
                         help="Maximum distance between modules boundaries to consider them identical.")
-    main_parser.add_argument("--clustering-feature", default="breakpoint", choices=["breakpoint", "recombination"],
+    main_parser.add_argument("--clustering-feature", type=str, default="breakpoint", choices=["breakpoint", "recombination"],
                         help="Feature to use to cluster phages")
-    main_parser.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden"],
-                             help="Phage clustering method")
     main_parser.add_argument("--clustering-gamma", type=float, default=0.2,
                         help="Cluster density")
     main_parser.add_argument("--resume", action="store_true",
                         help="Resume analysis if files already exist in output folder")
     main_parser.add_argument("--rename", action="store_true",
                         help="Rename contigs")
-    main_parser.add_argument("--plot-fmt", default="pdf", choices=["html", "svg"],
+    main_parser.add_argument("--plot-fmt", type=str, default="pdf", choices=["html", "svg"],
                         help="Figure format")
     main_parser.add_argument("--threads", type=int, default=20,
                         help="Number of threads for alignment")
@@ -66,7 +62,7 @@ def parse_args():
     sim_parser.add_argument("-n", "--n-forefathers", type=int, default=10)        
     sim_parser.add_argument("-k", "--n-subpopulations", type=int, default=3)
     sim_parser.add_argument("-r", "--n-rc", type=int, default=20)
-    sim_parser.add_argument("-o", "--outdir", default=TEST_DIR)
+    sim_parser.add_argument("-o", "--outdir", type=str, default=TEST_DIR)
     sim_parser.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
     sim_parser.add_argument("--num-variants-range", type=int, nargs=2, default=(5, 10))        
 
@@ -99,19 +95,18 @@ def setup_populations(args):
     if args.exclude:
         args.populations = [p for p in args.populations if not
                             any(re.match(".*"+e.strip("*")+".*", p.name) for e in args.exclude)]
+        
+    args.children = [f for f in args.populations
+                     if any(re.match(".*"+ri.strip("*")+".*", f.name)
+                            for ri in args.children)]
 
-    if not args.rotate_parent:
-        args.children = [f for f in args.populations
-                         if any(re.match(".*"+ri.strip("*")+".*", f.name)
-                                for ri in args.children)]
+    if not args.children:
+        raise ValueError(f"No children found")
 
-        if not args.children:
-            raise ValueError(f"No children found")
+    setattr(args, "parents", [f for f in args.populations if f not in args.children])
 
-        setattr(args, "parents", [f for f in args.populations if f not in args.children])
-
-        args.parents = [Path(p) for p in args.parents]
-        args.children = [Path(c) for c in args.children]
+    args.parents = [Path(p) for p in args.parents]
+    args.children = [Path(c) for c in args.children]
 
     return args
 

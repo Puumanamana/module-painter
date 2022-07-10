@@ -9,7 +9,7 @@ from sklearn.cluster import AgglomerativeClustering
 from module_painter.util import subset_fasta, build_homology_graph
 
 
-def set_breakpoint_ids(graphs, fasta, min_id=0.9, min_overlap=50, max_dist=100, outdir=None, threads=1):
+def set_breakpoint_ids(graphs, fasta, min_overlap=50, max_dist=100, outdir=None, threads=1):
     """
     Extract breakpoints in all genomes and maps them together
     """
@@ -25,7 +25,7 @@ def set_breakpoint_ids(graphs, fasta, min_id=0.9, min_overlap=50, max_dist=100, 
 
     #===== Assign bin ids ====#
     bk_fasta = subset_fasta(fasta, breakpoint_data, min_len=min_overlap, outprefix=f"{outdir}/breakpoints")
-    homology_graph = build_homology_graph(bk_fasta, min_id=min_id, min_size_ratio=0.5, verbose=0, threads=threads)
+    homology_graph = build_homology_graph(bk_fasta, min_id=0.95, min_size_ratio=0.5, verbose=0, threads=threads)
 
     #==== Extract connected components ====#
     bins = {}
@@ -42,7 +42,7 @@ def set_breakpoint_ids(graphs, fasta, min_id=0.9, min_overlap=50, max_dist=100, 
         if graph["sacc"] in bins.index.get_level_values("sacc"):
             graph.es["bk_id"] = bins.loc[graph["sacc"]].to_numpy()
 
-def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None):
+def map_missing_parents(genomes, coverages, min_id=0.97, threads=1, outdir=None):
     """
     Check if the missing data is approximately the same in different genomes
     """
@@ -50,7 +50,7 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
     nocovs_df = pd.DataFrame([
         [coverage.sacc, arc.sstart, arc.send]
         for coverage in coverages
-        for arc in coverage.arcs if arc.qacc == {"@"}
+        for arc in coverage.arcs if arc.qacc == {"NA"}
     ], columns=["sacc", "sstart", "send"])
 
     if len(nocovs_df) == 0:
@@ -62,7 +62,7 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
     # Save to fasta for minimap alignment
     nocov_fasta = subset_fasta(genomes, nocovs_df, outprefix=f"{outdir}/missing_data")
 
-    # Build homology graph between missing segments
+    # Build homology graph between NA segments
     homology_graph = build_homology_graph(
         nocov_fasta, min_id=min_id, min_size_ratio=0.3,
         verbose=0, threads=threads
@@ -76,7 +76,7 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
             (name, sstart, send, _) = vertices_array[vertex].split("^")
             bin_mapping[(name, int(sstart), int(send))] = i
 
-    # Update missing segments with corresponding bin id
+    # Update NAs with corresponding bin id
     for coverage in coverages:
         found = defaultdict(int) # in case repeats happen
         for arc in coverage.arcs:
@@ -86,5 +86,5 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
                 suffix = ""
                 if bin_id in found:
                     suffix = f"-repeat{found[bin_id]}"
-                arc.qacc = {f"@{bin_id}{suffix}"}
+                arc.qacc = {f"NA-{bin_id}{suffix}"}
                 found[bin_id] += 1
