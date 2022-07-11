@@ -54,18 +54,20 @@ def minimap2(query, ref, **kwargs):
       threshold is max{INT1, min{INT2, -f}}. This option prevents excessively small or large -f 
       estimated from the input reference. Available since r1034 and deprecating --min-occ-floor 
       in earlier versions of minimap2.
-    """    
-    if isinstance(ref, Path):
-        cmd = ["minimap2", str(ref), str(query)]
-        in_stream = {}
-    else:
-        cmd = ["minimap2", "-", str(query)]
-        in_stream = {"input": as_fasta(ref)}
-
+    """
+    cmd = ["minimap2"]
     for (k, v) in kwargs.items():
         cmd.append(f"-{k}" if len(k) == 1 else f"--{k}")
         if not isinstance(v, bool):
             cmd.append(str(v))
+            
+    if isinstance(ref, Path):
+        cmd += [str(ref), str(query)]
+        in_stream = {}
+    else:
+        cmd += ["-", str(query)]
+        in_stream = {"input": as_fasta(ref)}
+
 
     logger.info(f"Running: {' '.join(cmd)}")
     aln_str = sp.check_output(
