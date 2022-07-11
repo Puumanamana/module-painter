@@ -43,6 +43,10 @@ def partition_population(individuals, n_partitions=2):
     # np.random.shuffle(individuals)
     return np.array_split(individuals, n_partitions)
 
+def expand(population, lam=5):
+    n = np.random.poisson(lam, size=len(population))
+    return [seq for (ni, seq) in zip(n, population) for _ in range(ni)]
+
 def recombine_population(population, n_recombinations, return_rc=False):
     rcs = []
     for i in range(n_recombinations):
@@ -87,6 +91,7 @@ def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=N
                   for _ in range(n_modules)]
     forefathers = generate_forefathers(n_variants, n=n_forefathers)
     forefathers = partition_population(forefathers, n_subpopulations)
+    forefathers = [expand(subpop) for subpop in forefathers]
     children = [recombine_population(deepcopy(subpop), n_rc) for subpop in forefathers]
 
     forefathers = {f"F{k}.{i}": forefather
