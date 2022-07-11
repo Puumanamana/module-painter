@@ -41,10 +41,18 @@ def main():
             args.outdir = Path(outdir, f"parent-{parent.stem}")
             args.outdir.mkdir(exist_ok=True)
             paintings.append(paint(**vars(args)))
-        links = pd.concat([p["links"] for p in paintings])
         args.outdir = outdir
+        links = pd.concat([p["links"] for p in paintings])
+        # save to file
+        links_str = links.copy().sort_values(by="sacc", key=lambda x: x.str.len(), ascending=False)
+        links_str.sacc = links_str.sacc.apply("-".join)
+        links_str.to_csv(f"{args.outdir}/links-combined.csv")
     else:
-        paintings.append(paint(**vars(args)))
+        painting = paint(**vars(args))
+
+        if not painting: return
+        
+        paintings.append(painting)
         links = paintings[0]["links"]
 
     #========================#
@@ -52,8 +60,11 @@ def main():
     #========================#
     clusters = cluster_phages(
         links, outdir=args.outdir,
-        method=args.clustering_method
+        method=args.clustering_method,
+        group_pattern=args.group_pattern,
+        resolution=args.resolution
     )
+    
     clusters = [x for x in clusters if len(x) > 1]
 
     if not clusters:

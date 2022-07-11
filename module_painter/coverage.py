@@ -122,10 +122,10 @@ class Coverage:
 
         return df
     
-    def write_csv(self, outdir):
-        Path(outdir).mkdir(exist_ok=True)
+    def to_csv(self, fpath):
+        Path(fpath).parent.mkdir(exist_ok=True)
         df = self.to_pandas()
-        df.to_csv(f"{outdir}/{self.sacc}.csv")
+        df.to_csv(fpath)
 
     def is_covered(self):
         """

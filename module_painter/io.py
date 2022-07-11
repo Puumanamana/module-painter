@@ -48,14 +48,16 @@ def parse_args():
                         help="Feature to use to cluster phages")
     main_parser.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden"],
                              help="Phage clustering method")
-    main_parser.add_argument("--clustering-gamma", type=float, default=0.2,
-                        help="Cluster density")
+    main_parser.add_argument("--resolution", type=float, default=0.2,
+                        help="Cluster density (CPM threshold for community detection for Leiden method)")
     main_parser.add_argument("--resume", action="store_true",
                         help="Resume analysis if files already exist in output folder")
     main_parser.add_argument("--rename", action="store_true",
                         help="Rename contigs")
     main_parser.add_argument("--plot-fmt", default="pdf", choices=["html", "svg"],
                         help="Figure format")
+    main_parser.add_argument("--group-pattern", default=None,
+                        help="Regex pattern for coloring groups for recombination graph")
     main_parser.add_argument("--threads", type=int, default=20,
                         help="Number of threads for alignment")
 
@@ -114,6 +116,22 @@ def setup_populations(args):
         args.children = [Path(c) for c in args.children]
 
     return args
+
+def find_outputs(outdir):
+    outputs = dict(raw_aln=Path(outdir, "raw_alignments.csv"))
+
+    for (key, folder, ext) in [
+            ("raw_cov", "simplified_coverage", "csv"),
+            ("@mapped", "missing_data", "csv"),
+            ("graphs", "overlap_graphs", "pickle")
+    ]:
+        outputs[key] = {}
+        folder = Path(outdir, folder)
+        if not folder.is_dir():
+            break
+        for fpath in Path(folder).glob(f"*.{ext}"):
+            outputs[key][fpath.stem] = fpath
+    return outputs
 
 def setup_logger(name, log_file, level=logging.INFO):
     """

@@ -22,4 +22,7 @@ setup(name='module-painter',
           'igraph',
           'mappy',
           'psutil'
-      ])
+      ],
+      extras_require = {
+          'full': ['pycairo']
+      })

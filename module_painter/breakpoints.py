@@ -1,3 +1,4 @@
+from pathlib import Path
 from itertools import product, combinations
 from collections import Counter, defaultdict
 
@@ -46,6 +47,7 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
     """
     Check if the missing data is approximately the same in different genomes
     """
+
     # Intervals with fillers
     nocovs_df = pd.DataFrame([
         [coverage.sacc, arc.sstart, arc.send]
@@ -60,7 +62,7 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
     nocovs_df = nocovs_df.set_index(["sacc", "sstart", "send"]).uid.sort_index()
 
     # Save to fasta for minimap alignment
-    nocov_fasta = subset_fasta(genomes, nocovs_df, outprefix=f"{outdir}/missing_data")
+    nocov_fasta = subset_fasta(genomes, nocovs_df, outprefix=outdir)
 
     # Build homology graph between missing segments
     homology_graph = build_homology_graph(
@@ -88,3 +90,5 @@ def map_missing_parents(genomes, coverages, min_id=0.95, threads=1, outdir=None)
                     suffix = f"-repeat{found[bin_id]}"
                 arc.qacc = {f"@{bin_id}{suffix}"}
                 found[bin_id] += 1
+        coverage.to_csv(f"{outdir}/{coverage.sacc}.csv")
+        
