@@ -128,7 +128,7 @@ def find_outputs(outdir):
         outputs[key] = {}
         folder = Path(outdir, folder)
         if not folder.is_dir():
-            break
+            continue
         for fpath in Path(folder).glob(f"*.{ext}"):
             outputs[key][fpath.stem] = fpath
     return outputs

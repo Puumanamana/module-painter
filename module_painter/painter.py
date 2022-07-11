@@ -66,7 +66,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
 
     coverages = []
     for child in alns.sacc.unique():
-        cov_file = outputs["raw_cov"][child]
+        cov_file = Path(outdir, "simplified_coverage", f"{child}.csv")
         # If cov_file doesn't exist but next step started, then len(cov) < 2
         next_step_started = any(outputs["@mapped"])
         if resume and (cov_file.is_file() or next_step_started):
