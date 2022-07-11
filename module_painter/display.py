@@ -23,7 +23,7 @@ def get_cmap(factor):
         palette = linear_palette(Turbo256, n)
         palette = np.random.choice(palette, n, replace=False).tolist()
 
-    cmap = dict(zip(factor, palette))
+    cmap = dict(zip(categories, palette))
 
     return cmap
 
