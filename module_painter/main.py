@@ -74,7 +74,7 @@ def main():
     #========================#
     #======== Display =======#
     #========================#
-    if not args.rotate_parent:
+    if not args.rotate_parent and args.plot_coverages:
         logger.info(f"Interactive plot in {args.outdir}")
         display_phages(paintings[0]["graphs"], clusters=clusters,
                         norm=True, outdir=args.outdir, fmt=args.plot_fmt)

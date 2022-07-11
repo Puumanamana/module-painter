@@ -58,6 +58,8 @@ def parse_args():
                         help="Figure format")
     main_parser.add_argument("--group-pattern", default=None,
                         help="Regex pattern for coloring groups for recombination graph")
+    main_parser.add_argument("--plot-coverages", action="store_true",
+                        help="Display coverage for phages")
     main_parser.add_argument("--threads", type=int, default=20,
                         help="Number of threads for alignment")
 
