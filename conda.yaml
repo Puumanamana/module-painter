@@ -1,4 +1,4 @@
-name: module-painting
+name: module-painter
 channels:
   - conda-forge
   - bioconda
