@@ -43,7 +43,7 @@ def partition_population(individuals, n_partitions=2):
     # np.random.shuffle(individuals)
     return np.array_split(individuals, n_partitions)
 
-def expand(population, lam=5):
+def expand(population, lam=3):
     n = np.random.poisson(lam, size=len(population))
     return [seq for (ni, seq) in zip(n, population) for _ in range(ni)]
 
@@ -101,7 +101,7 @@ def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=N
     children = {f"C{k}.{i}": child
                 for k, subpop in enumerate(children)
                 for i, child in enumerate(subpop)}
-
+    
     modules = [generate_module(*module_size_range, ni) for ni in n_variants]
     junctions = [generate_module(*module_size_range, 1)[0] for _ in n_variants]
 
