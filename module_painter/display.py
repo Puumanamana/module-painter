@@ -95,7 +95,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         if "@" in parent:
             cmap[parent] = "gray"
     remaining_parents = set(data.parent.unique()).difference(cmap.keys())
-    remaining_cmap = get_palette(remaining_parents)
+    remaining_cmap = get_cmap(remaining_parents)
     cmap.update(remaining_cmap)
 
     subplots = []
