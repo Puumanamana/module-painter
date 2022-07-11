@@ -104,6 +104,7 @@ def test_fill_gaps():
     cov.fill_gaps(2)
 
     na_arc = [arc for arc in cov.arcs if "@" in arc.qacc]
+    print(cov)
     assert len(na_arc) == 1
     assert na_arc[0].bounds() == (7, 12)
     assert cov.arcs[0].bounds() == (0, 3)
