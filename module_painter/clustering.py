@@ -5,27 +5,11 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 import igraph
-from bokeh.palettes import Colorblind, Turbo256
 
 from module_painter.parent_selection import get_breakpoints, find_recombinations
+from module_painter.display import get_cmap
 
 logger = logging.getLogger("module-painter")
-
-def get_colors(groups):
-    categories = set(groups)
-    n = len(categories)
-    if n > 256:
-        print("Too many groups to display. Skipping coloring")
-        return []
-    elif n <= 8:
-        colors = Colorblind[max(3, n)]
-    else:
-        colors = Turbo256
-
-    cmap = dict(zip(categories, colors))
-        
-    return [cmap[g] for g in groups]
-    
 
 def get_links(breakpoints, feature="recombination", outdir=None):
     if "breakpoint" in feature:
@@ -62,9 +46,8 @@ def cluster_phages(links, outdir=None, method="leiden", group_pattern=None, reso
     if group_pattern is not None:
         groups = [re.findall(group_pattern, x)[0] for x in vnames]
         aes["vertex_label"] = [re.sub(group_pattern, "", vname) for vname in vnames]
-        colors = get_colors(groups)
-        if colors:
-            aes["vertex_color"] = colors
+        cmap = get_cmap(groups)
+        aes["vertex_color"] = [cmap[g] for g in groups]
     try:
         igraph.plot(recomb_graph, target=f"{outdir}/recombination_graph.pdf", **aes)
     except AttributeError:

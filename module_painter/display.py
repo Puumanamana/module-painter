@@ -5,7 +5,7 @@ import pandas as pd
 
 import numpy as np
 from bokeh.models import HoverTool
-from bokeh.palettes import Turbo256, linear_palette
+from bokeh.palettes import Colorblind, Turbo256, linear_palette
 from bokeh.io import export_svg
 
 import holoviews as hv
@@ -14,11 +14,18 @@ import colorcet as cc
 hv.extension("bokeh")
 
 
-def get_palette(n):
-    palette = linear_palette(Turbo256, n)
-    palette = np.random.choice(palette, n, replace=False).tolist()
+def get_cmap(factor):
+    categories = set(factor)
+    n = len(categories)
+    if n <= 8:
+        palette = Colorblind[max(3, n)]
+    else:
+        palette = linear_palette(Turbo256, n)
+        palette = np.random.choice(palette, n, replace=False).tolist()
 
-    return palette
+    cmap = dict(zip(factor, palette))
+
+    return cmap
 
 def custom_cmap():
     return dict(
@@ -88,8 +95,8 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         if "@" in parent:
             cmap[parent] = "gray"
     remaining_parents = set(data.parent.unique()).difference(cmap.keys())
-    colors = get_palette(len(remaining_parents))
-    cmap.update(dict(zip(remaining_parents, colors)))
+    remaining_cmap = get_palette(remaining_parents)
+    cmap.update(remaining_cmap)
 
     subplots = []
 
