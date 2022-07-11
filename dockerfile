@@ -1,8 +1,9 @@
-FROM mambaorg/micromamba:git-e2d1bf8-focal-cuda-11.3.1
+FROM mambaorg/micromamba:0.24.0
 LABEL author="carisdak@hawaii.edu"
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
 
-COPY . .
+COPY --chown=$MAMBA_USER:$MAMBA_USER . .
 
-RUN micromamba update --yes --file conda.yaml -n base
+RUN micromamba install -y -n base -f conda.yaml && \
+    micromamba clean --all --yes
 
-WORKDIR /workspace
