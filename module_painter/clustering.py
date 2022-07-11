@@ -56,7 +56,8 @@ def cluster_phages(links, outdir=None, method="leiden", group_pattern=None, reso
     recomb_graph.add_edges(links.sacc.tolist())
 
     vnames = recomb_graph.vs["name"]
-    aes = dict(vertex_label=vnames)
+    aes = dict(vertex_label=vnames, layout="kk",
+               vertex_size=30, vertex_label_size=20)
     
     if group_pattern is not None:
         groups = [re.findall(group_pattern, x)[0] for x in vnames]

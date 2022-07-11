@@ -81,12 +81,12 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
 
         if len(coverage) < 2: logger.debug(f"Discarding {child} (only one parent left)")
         else: coverages.append(coverage)
-
+        
     if not coverages:
         logger.warning(f"All coverages were filtered out. Exiting")
         return dict()
 
-    if all(cov.sacc in outputs["@mapped"] for cov in coverages):
+    if resume and all(cov.sacc in outputs["@mapped"] for cov in coverages):
         logger.info(f"Loading coverages with missing parents mapped (resume)")
         coverages = [Coverage.from_csv(out) for out in outputs["@mapped"].values()]
     else:

@@ -75,7 +75,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         xlabel="Position", ylabel="Phage",
         gridstyle=dict(ygrid_line_color="gray", xgrid_line_alpha=0, ygrid_line_dash=[4, 4]),
         show_grid=True,
-        show_legend=False,
+        show_legend=True,
         legend_position="right",
         legend_limit=50,
         legend_offset=(30, 0),

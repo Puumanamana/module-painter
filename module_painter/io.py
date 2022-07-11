@@ -40,7 +40,7 @@ def parse_args():
                         help="Minimum sequence identity for gap closing")
     main_parser.add_argument("--skip-nw", action="store_true",
                         help="Skip NW alignment for coverage refinement")
-    main_parser.add_argument("--min-module-size", type=int, default=40,
+    main_parser.add_argument("--min-module-size", type=int, default=100,
                         help="Minimum size of a module/HSP")
     main_parser.add_argument("--arc-eq-diffs", type=int, default=30,
                         help="Maximum distance between modules boundaries to consider them identical.")
@@ -48,7 +48,7 @@ def parse_args():
                         help="Feature to use to cluster phages")
     main_parser.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden"],
                              help="Phage clustering method")
-    main_parser.add_argument("--resolution", type=float, default=0.2,
+    main_parser.add_argument("--resolution", type=float, default=0.5,
                         help="Cluster density (CPM threshold for community detection for Leiden method)")
     main_parser.add_argument("--resume", action="store_true",
                         help="Resume analysis if files already exist in output folder")
