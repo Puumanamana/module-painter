@@ -94,6 +94,11 @@ def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=N
     forefathers = [expand(subpop) for subpop in forefathers]
     children = [recombine_population(deepcopy(subpop), n_rc) for subpop in forefathers]
 
+    summary = [len(subpop) for subpop in forefathers]
+    with open(f"{outdir}/population_sizes.csv", "w") as handle:
+        handle.write(",".join(["N", "n_k"]) + "\n")
+        handle.write(",".join([str(sum(summary)), " ".join(map(str, summary))]) + "\n")
+    
     forefathers = {f"F{k}.{i}": forefather
                    for k, subpop in enumerate(forefathers)
                    for i, forefather in enumerate(subpop)}
@@ -120,6 +125,7 @@ def simulate(num_variants_range=None, n_modules=None, n_forefathers=None, n_rc=N
             for pos, (variant, junction) in enumerate(zip(child, junctions)):
                 seq += (junction + modules[pos][variant])
             writer.write(f">{seq_id} {meta}\n{seq}\n")
+
 
     # Some more logging info
     logger.debug("====Forefathers====")
