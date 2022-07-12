@@ -60,19 +60,20 @@ def parse_args():
                         help="Regex pattern for coloring groups for recombination graph")
     main_parser.add_argument("--plot-coverages", action="store_true",
                         help="Display coverage for phages")
-    main_parser.add_argument("--threads", type=int, default=20,
+    main_parser.add_argument("--threads", type=int, default=10,
                         help="Number of threads for alignment")
 
     # Simulation
     sim_parser = subparsers.add_parser("simulate", help="Simulate recombinant populations",
                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     sim_parser.add_argument("-m", "--n-modules", type=int, default=30)        
-    sim_parser.add_argument("-n", "--n-forefathers", type=int, default=10)        
+    sim_parser.add_argument("-n", "--n-parents", type=int, default=10)        
     sim_parser.add_argument("-k", "--n-subpopulations", type=int, default=3)
-    sim_parser.add_argument("-r", "--n-rc", type=int, default=20)
     sim_parser.add_argument("-o", "--outdir", default=TEST_DIR)
     sim_parser.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
-    sim_parser.add_argument("--num-variants-range", type=int, nargs=2, default=(5, 10))        
+    sim_parser.add_argument("--n-variants-range", type=int, nargs=2, default=(5, 10))        
+    sim_parser.add_argument("--n-gen-range", type=int, nargs=2, default=(2, 10))        
+    sim_parser.add_argument("--rate-range", type=float, nargs=2, default=(0.1, 0.9))
 
     args = parser.parse_args()
 

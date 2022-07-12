@@ -115,7 +115,7 @@ class Arc:
         if dist > max_dist:
             return False # too far
 
-        logger.debug("Extending: {self.qacc}:{self.sstart:,}-{self.send:,} -> {other.qacc}:{other.sstart:,}-{other.send:,}")
+        # logger.debug("Extending: {self.qacc}:{self.sstart:,}-{self.send:,} -> {other.qacc}:{other.sstart:,}-{other.send:,}")
 
         if self.sstart <= other.sstart: # General case: 1--1...2--2
             left_extend = dist // 2
