@@ -35,18 +35,23 @@ def main():
         logger.info("Rotating parent mode")
         outdir = args.outdir
         for parent in args.populations:
-            logger.info(f"Setting {parent} as parent population")
+            logger.info(f"==> Setting {parent} as parent population")
             args.parents = [parent]
             args.children = [p for p in args.populations if p!=parent]
             args.outdir = Path(outdir, f"parent-{parent.stem}")
             args.outdir.mkdir(exist_ok=True)
             paintings.append(paint(**vars(args)))
+
         args.outdir = outdir
-        links = pd.concat([p["links"] for p in paintings])
-        # save to file
-        links_str = links.copy().sort_values(by="sacc", key=lambda x: x.str.len(), ascending=False)
-        links_str.sacc = links_str.sacc.apply("-".join)
-        links_str.to_csv(f"{args.outdir}/links-combined.csv")
+
+        # Aggregate results for all runs
+        ## Recombinations
+        rc = pd.concat([p["rc"] for p in paintings])
+        rc.to_csv(f"{args.outdir}/recombinations.csv")        
+        
+        ## Shared breakpoints/recombinations
+        links = pd.concat([p["links"] for p in paintings if not p["links"].empty])
+        links.to_csv(f"{args.outdir}/links.csv")
     else:
         painting = paint(**vars(args))
 
@@ -54,6 +59,7 @@ def main():
         
         paintings.append(painting)
         links = paintings[0]["links"]
+        links.to_csv(f"{args.outdir}/links.csv")
 
     #========================#
     #======= Clustering =====#

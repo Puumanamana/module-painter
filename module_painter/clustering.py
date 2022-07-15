@@ -11,36 +11,45 @@ from module_painter.display import get_cmap
 
 logger = logging.getLogger("module-painter")
 
-def get_links(breakpoints, feature="recombination", outdir=None):
-    if "breakpoint" in feature:
-        links = breakpoints.groupby("bk_id").agg(dict(sacc=list, parents="first"))
-    else:
-        links = find_recombinations(breakpoints)
-        links = links.groupby("bk_ids").agg(dict(sacc=list, parents="first"))
+def summarize_recombinations(breakpoints, outdir):
+    rc = find_recombinations(breakpoints)
+    rc = (rc.groupby(["bk_ids", "parents"]).agg(dict(sacc=list))
+          .droplevel("bk_ids")
+          .sort_values(by="sacc", key=lambda x: x.str.len(), ascending=False))
+    rc.sacc = rc.sacc.apply("-".join)
+    rc.to_csv(f"{outdir}/recombinations.csv")
 
-    if outdir is not None:
-        links_str = links.copy().sort_values(by="sacc", key=lambda x: x.str.len(), ascending=False)
-        links_str.sacc = links_str.sacc.apply("-".join)
-        # save recombinations to file
-        links_str.to_csv(f"{outdir}/recombinations.csv")
+    return rc
+
+def get_links(df, feature="recombination", outdir=None):
+    
+    keys = ["bk_id", "parents"]
+
+    if "recombination" in feature:
+        keys[0] = "bk_ids"
+        df = find_recombinations(df)
+
+    links = (df.groupby(keys).sacc.agg(lambda x: list(combinations(x, 2)))
+             .explode().dropna()
+             .droplevel(keys[0]).reset_index()
+             .set_index("sacc").parents)
+
+    if not links.empty:
+        links.index = pd.MultiIndex.from_tuples(links.index)
+        links.sort_index(inplace=True)
 
     return links
 
 def cluster_phages(links, outdir=None, method="leiden", group_pattern=None, resolution=0.2):
 
-    links = links.copy()[links.sacc.apply(len) > 1]
-    
     if links.empty: return []
 
-    links.sacc = links.sacc.apply(lambda cl: list(combinations(cl, 2)))
-    links = links.explode("sacc")
-    
     recomb_graph = igraph.Graph()
-    recomb_graph.add_vertices(links.sacc.explode().unique())
-    recomb_graph.add_edges(links.sacc.tolist())
+    recomb_graph.add_vertices(list({x for tup in links.index for x in tup}))
+    recomb_graph.add_edges(links.index)
 
     vnames = recomb_graph.vs["name"]
-    aes = dict(vertex_label=vnames, layout="kk",)
+    aes = dict(vertex_label=vnames)
                # vertex_size=30, vertex_label_size=20)
     
     if group_pattern is not None:
