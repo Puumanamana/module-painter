@@ -1,10 +1,12 @@
 import logging
+from functools import total_ordering
+from itertools import combinations
 from math import ceil
-import random
 from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from Bio import SeqIO
 
 
@@ -29,136 +31,220 @@ class color:
 
         return f"{prefix}{x}{color.END}"
 
-def show_rc(parent, pos, n=1):
-    parent_str = [str(m) for m in parent]
-    parent_str[pos] = color.display(parent_str[pos], n=n, bold=True, underlined=True)
-    logger.debug("|".join(parent_str))
+@total_ordering
+class Phage:
+    def __init__(self, variants, idx=None):
+        assert len(variants) > 1
+        self.idx = idx
+        self.variants = variants
+        self.history = set()
+        self.abund = 1
+        
+    def __repr__(self):
+        return f"{self.idx}. " + "|".join(map(str, self.variants))
 
-def generate_parents(n_variants, n=10):
-    parents = []
-    for i in range(n):
-        seq = [random.randint(0, ni-1) for ni in n_variants]
-        parents.append(tuple(seq))
-    return parents
+    def __len__(self):
+        return len(self.variants)
 
-def partition_population(individuals, n_partitions=2):
-    # np.random.shuffle(individuals)
-    return np.array_split(individuals, n_partitions)
+    def __hash__(self):
+        return hash(tuple(self.variants))
 
-def expand(population, lam=3):
-    n = np.random.poisson(lam, size=len(population))
-    return [seq for (ni, seq) in zip(n, population) for _ in range(ni)]
+    def __lt__(self, other):
+        return tuple(self.variants) < tuple(other.variants)
 
-def recombine_population(population, rate_range=(0.2, 1), n_gen=1, return_rc=True):
-    rate = random.uniform(*rate_range)
-    n_recombinations = ceil(rate*len(population)*n_gen)
+    def __eq__(self, other):
+        return tuple(self.variants) == tuple(other.variants)
+    
+    def as_rc(self, pos1, pos2):
+        variants_str = [str(v) for v in self.variants]
+        for pos in range(pos1, pos2):
+            variants_str[pos] = color.display(variants_str[pos], n=1, bold=True, underlined=True)
+        return "|".join(variants_str)
 
-    rcs = []
-    for i in range(n_recombinations):
-        logger.debug(f"======== Iteration {i:,} =======")
-        (i1, i2) = np.random.choice(len(population), 2, replace=False)
-        (p1, p2) = (population[i1], population[i2])
-        pos = recombine(p1, p2)
-        rcs.append((i1, i2, pos))
+    @classmethod
+    def random(cls, n_variants, idx=None):
+        variants = [np.random.randint(0, ni) for ni in n_variants]
+        phage = Phage(variants, idx=idx)
+        phage.evolve()
+        return phage
 
-    if return_rc:
-        return (population, rcs)
-    return population
+    @classmethod
+    def from_recombination(cls, phages, positions, idx=None):
+        np.random.shuffle(phages)
 
-def recombine(s1, s2, show=True):
-    pos = random.randint(0, len(s1)-1)
-    if show:
-        for s in [s1, s2]:
-            show_rc(s, pos)
-        logger.debug("-"*30)
-    (s2[pos], s1[pos]) = (s1[pos], s2[pos])
-    if show:
-        for s in [s1, s2]:
-            show_rc(s, pos)
-    return pos
+        variants = phages[0].variants.copy()
+        for pos in range(*positions):
+            variants[pos] = phages[1].variants[pos]
+
+        phage = Phage(variants, idx=idx)
+        rc_info = (phages[0].idx, phages[1].idx, positions[0], positions[1])
+        phage.history = phages[0].history | phages[1].history
+        phage.history.add(rc_info)
+
+        return phage
+    
+    def evolve(self, lam=3):
+        self.abund = 1 + np.random.poisson(lam)
+
+    def as_fasta(self, modules):
+        meta = "-".join(map(str, self.variants))
+        seq = "".join(module[variant] for (module, variant) in zip(modules, self.variants))
+
+        return f">{self.idx} {meta}\n{seq}\n"
+
+class PhagePopulation:
+    def __init__(self, *phages, rc_rate=0.5, name=""):
+        self.name = name
+        self.phages = set(phages)
+        self.rc_rate = rc_rate
+        self.rc_count = 0
+        self.n_gen = 0
+
+    def __repr__(self):
+        return "\n".join(p.__repr__() for p in self.phages)
+
+    def __len__(self):
+        return len(self.phages)
+
+    def __getitem__(self, key):
+        try:
+            return next(phage for phage in self.phages if phage.idx == key)
+        except StopIteration:
+            print(f"Phage {key} not found in population")
+
+    def add(self, phage):
+        phage.idx = f"{self.name}.{phage.idx}"
+        self.phages.add(phage)
+    
+    def summarize(self):
+        return dict(
+            name=self.name, pop_size=len(self),
+            n_rc=self.rc_count, rc_rate=self.rc_rate, n_gen=self.n_gen
+        )
+
+    @classmethod
+    def random(self, lam, n_variants, rc_rate_range=None, name=""):
+        n = max(2, np.random.poisson(lam))
+        rc_rate = np.random.uniform(*rc_rate_range)
+        
+        population = PhagePopulation(name=name, rc_rate=rc_rate)
+        for i in range(n):
+            phage = Phage.random(n_variants, idx=i)
+            population.add(phage)
+        return population
+
+    @classmethod
+    def from_parents(cls, parents, n_generations, name=""):
+        population = deepcopy(parents)
+        population.name = name
+
+        for i in range(n_generations):
+            population.next_generation()
+
+        population.phages = population.phages - parents.phages
+        population.n_gen = n_generations
+
+        return population
+        
+    def next_generation(self):
+        n_rc = ceil(self.rc_rate*len(self))
+        logger.debug(f"Next generation: {n_rc} recombinations")
+        for i in range(n_rc):
+            self.random_recombination()
+
+    def random_recombination(self, verbose=False):
+        indices = np.random.choice(len(self), 2, replace=False)
+        phages = [phage for i, phage in enumerate(self.phages) if i in indices]
+        pos = sorted(np.random.choice(range(len(phages[0])), 2))
+
+        child = Phage.from_recombination(phages, pos, idx=len(self))
+
+        if child in self.phages:
+            logger.debug("Existing variant exists. Skipping")
+            return
+
+        child.evolve() # not included in model for now
+        self.add(child)
+
+        if verbose:
+            for phage in phages:
+                logger.debug(phage.as_rc(*pos))
+            logger.info("-"*30)
+            logger.info(child.as_rc(*pos))
+
+        self.rc_count += 1
+
+    def shared_evolution(self):
+        shared = {}
+        for (phage1, phage2) in combinations(self.phages, 2):
+            shared[(phage1.idx, phage2.idx)] = len(
+                phage1.history & phage2.history
+            )
+        return shared
+
+    def to_fasta(self, modules, output=None, mode="a"):
+        with open(output, mode) as writer:
+            for (i, phage) in enumerate(self.phages):
+                entry = phage.as_fasta(modules)
+                writer.write(entry)
 
 def generate_module(min_size, max_size, n_variants):
-    mean_size = random.randint(min_size, max_size)
+    mean_size = np.random.randint(min_size, max_size)
     sizes = np.random.poisson(mean_size, size=n_variants)
     variants = ["".join(np.random.choice(NUCL, size=vi)) for vi in sizes]
 
     return tuple(variants)
 
-def simulate(n_modules=None, n_parents=None,
-             n_subpopulations=None, module_size_range=None, outdir=None,
-             n_variants_range=None, n_gen_range=None, rate_range=None,
-             **kwargs):
+def simulate(n_modules=None, n_variants_range=None, module_size_range=None,
+             n_subpop=None, subpop_size_lam=None,
+             n_gen_range=None, rate_range=None,
+             outdir=None, **kwargs):
 
-    n_gen = random.randint(*n_gen_range)
-    n_variants = [random.randint(*n_variants_range) for _ in range(n_modules)]
+    n_variants = [np.random.randint(*n_variants_range) for _ in range(n_modules)]
+    n_gen = np.random.randint(*n_gen_range)
 
-    logger.info(f"#Parents: {n_parents}")
-    logger.info(f"#Subpopulations: {n_subpopulations}")
-    logger.info(f"#Variants per module: {','.join(map(str, n_variants))} (range: {'-'.join(map(str, n_variants_range))})")
-    logger.info(f"Module size range: {'-'.join(map(str, module_size_range))}")    
-    logger.info(f"#Generations: {n_gen} (range: {'-'.join(map(str, n_gen_range))})")    
-    logger.info(f"Recombination rate range: {'-'.join(map(str, rate_range))}")    
-    
-    parents = generate_parents(n_variants, n=n_parents)
-    parents = partition_population(parents, n_subpopulations)
-    parents = [expand(subpop) for subpop in parents]
+    logger.info(f"#Modules: {n_modules}")
+    logger.info("#Variant per module ~ U({}, {})".format(*n_variants_range))
+    logger.info("Module size (bp) ~ U({}, {})".format(*module_size_range))
+    logger.info(f"#Subpopulations: {n_subpop}")
+    logger.info(f"#Subpopulation size lambda ~ Poisson({subpop_size_lam})")
+    logger.info("#Generations: {} (~ U({}, {}))".format(n_gen, *n_gen_range))
+    logger.info("Recombination rate ~ U({}, {})".format(*rate_range))    
 
-    children = []
-    n_rc = []
-    for subpop in parents:
-        (recombined, rc) = recombine_population(deepcopy(subpop), rate_range=rate_range, n_gen=n_gen)
-        children.append(recombined)
-        n_rc.append(len(rc))
+    parents = [
+        PhagePopulation.random(
+            lam=subpop_size_lam,
+            n_variants=n_variants,
+            rc_rate_range=rate_range,
+            name=f"P{k}"
+        )
+        for k in range(n_subpop)
+    ]
 
-    pop_sizes = [len(subpop) for subpop in parents]
-    with open(f"{outdir}/summary.csv", "w") as handle:
-        handle.write(",".join(["N", "n_gen", "n_rc"]) + "\n")
-        vals = map(str, [sum(pop_sizes), n_gen, sum(n_rc)])
-        handle.write(",".join(vals) + "\n")
-    
-    parents = {f"P{k}.{i}": parent
-                   for k, subpop in enumerate(parents)
-                   for i, parent in enumerate(subpop)}
+    children = [PhagePopulation.from_parents(subpop, n_gen, name=f"C{k}")
+                for (k, subpop) in enumerate(parents)]
 
-    children = {f"C{k}.{i}": child
-                for k, subpop in enumerate(children)
-                for i, child in enumerate(subpop)}
-    
     modules = [generate_module(*module_size_range, ni) for ni in n_variants]
-    junctions = [generate_module(*module_size_range, 1)[0] for _ in n_variants]
+    
+    # Write populations to fasta file
+    for (name, data) in [("parents", parents), ("children", children)]:
+        outfile = Path(outdir, f"{name}.fasta")
+        outfile.unlink(missing_ok=True)
+        for k, subpop in enumerate(data):
+            subpop.to_fasta(modules, output=outfile)
 
-    with open(f"{outdir}/parents.fasta", "w") as writer:
-        for (seq_id, parent) in parents.items():
-            meta = "-".join(map(str, parent))
-            seq = ""
-            for pos, (variant, junction) in enumerate(zip(parent, junctions)):
-                seq += (junction + modules[pos][variant])
-            writer.write(f">{seq_id} {meta}\n{seq}\n")
+    # Save some metadata
+    clusters = pd.Series({phage.idx: k for k, pop in enumerate(children)
+                          for phage in pop.phages}).rename("subpop_id")
+    clusters.index.name = "seq_id"
+    clusters.to_csv(f"{outdir}/subpopulations.csv")
 
-    with open(f"{outdir}/children.fasta", "w") as writer:
-        for (seq_id, child) in children.items():
-            meta = "-".join(map(str, child))
-            seq = ""
-            for pos, (variant, junction) in enumerate(zip(child, junctions)):
-                seq += (junction + modules[pos][variant])
-            writer.write(f">{seq_id} {meta}\n{seq}\n")
-
-    # Some more logging info
-    logger.debug("====Parents====")
-    cmap = {seq_id: i for (i, seq_id) in enumerate(parents)}
-
-    for (seq_id, parent) in parents.items():
-        f_str =  f"{seq_id}: " + " | ".join(map(str, parent))
-        logger.debug(color.display(f_str, n=cmap[seq_id]))
-
-    logger.debug("====Children====")
-    for (seq_id, child) in children.items():
-        cluster = seq_id.split(".")[0][1:]
-        parent_cluster = [it for it in parents.items()
-                              if it[0][1:].startswith(cluster)]
-        c_str = []
-        for j, variant in enumerate(child):
-            parent = next(it[0] for it in parent_cluster if it[1][j] == variant)
-            c_str.append(color.display(variant, n=cmap[parent]))
-        logger.debug(f"{seq_id}: " + " | ".join(c_str))
-            
+    summary = pd.DataFrame([pop.summarize() for pop in children])
+    summary["subpop_size_lambda"] = subpop_size_lam
+    summary.to_csv(f"{outdir}/summary.csv", index=False)
+    
+    shared = pd.concat([
+        pd.Series(subpop.shared_evolution())
+        for subpop in children
+    ])
+    shared.to_csv(f"{outdir}/shared_evolution.csv", header=None)
