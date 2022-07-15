@@ -18,62 +18,69 @@ def parse_args():
     # Main parser
     main_parser = subparsers.add_parser("run", help="Paint set of child phages with parents",
                                         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    main_parser.add_argument("--rotate-parent", action="store_true",
-                        help="Cluster datasets by rotating parent set")
-    main_parser.add_argument("-d", "--dataset", default="fromageries",
-                        help="Test dataset choice")
-    main_parser.add_argument("-p", "--populations", nargs="+",
-                        help="All populations (fasta)")
-    main_parser.add_argument("-c", "--children", nargs="*",
-                        help="Children sequences within the population (list of glob pattern)")
-    main_parser.add_argument("--exclude", nargs="+",
-                        help="Files to exclude from the population (list of glob pattern)")
-    main_parser.add_argument("--aligner", default="minimap2", choices=["blastn", "minimap2"],
-                        help="Alignment tool")    
-    main_parser.add_argument("--outdir", default="/tmp/cedric/modular_painting/output",
-                        help="Output folder")
-    main_parser.add_argument("--min-length", type=int, default=5000,
-                        help="Minimum contig length")
-    main_parser.add_argument("--min-id", type=float, default=0.9,
-                        help="Minimum sequence identity")
-    main_parser.add_argument("--min-nw-id", type=float, default=0.8,
-                        help="Minimum sequence identity for gap closing")
-    main_parser.add_argument("--skip-nw", action="store_true",
-                        help="Skip NW alignment for coverage refinement")
-    main_parser.add_argument("--min-module-size", type=int, default=100,
-                        help="Minimum size of a module/HSP")
-    main_parser.add_argument("--arc-eq-diffs", type=int, default=30,
-                        help="Maximum distance between modules boundaries to consider them identical.")
-    main_parser.add_argument("--clustering-feature", default="breakpoint", choices=["breakpoint", "recombination"],
-                        help="Feature to use to cluster phages")
-    main_parser.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden"],
-                             help="Phage clustering method")
-    main_parser.add_argument("--resolution", type=float, default=0.5,
-                        help="Cluster density (CPM threshold for community detection for Leiden method)")
+    main_parser.add_argument("--threads", type=int, default=10,
+                        help="Number of threads for alignment")
     main_parser.add_argument("--resume", action="store_true",
                         help="Resume analysis if files already exist in output folder")
     main_parser.add_argument("--rename", action="store_true",
                         help="Rename contigs")
-    main_parser.add_argument("--plot-fmt", default="pdf", choices=["html", "svg"],
-                        help="Figure format")
-    main_parser.add_argument("--group-pattern", default=None,
-                        help="Regex pattern for coloring groups for recombination graph")
-    main_parser.add_argument("--plot-coverages", action="store_true",
+    main_parser.add_argument("--min-length", type=int, default=5000,
+                        help="Minimum contig length")
+    io_args = main_parser.add_argument_group('I/O')
+    io_args.add_argument("-d", "--dataset", default="fromageries",
+                        help="Test dataset choice")
+    io_args.add_argument("-p", "--populations", nargs="+",
+                        help="All populations (fasta)")
+    io_args.add_argument("-c", "--children", nargs="*",
+                        help="Children sequences within the population (list of glob pattern)")
+    io_args.add_argument("--exclude", nargs="+",
+                        help="Files to exclude from the population (list of glob pattern)")
+    io_args.add_argument("--outdir", default="/tmp/cedric/modular_painting/output",
+                        help="Output folder")
+    aln_args = main_parser.add_argument_group('Alignment')
+    aln_args.add_argument("--aligner", default="minimap2", choices=["blastn", "minimap2"],
+                        help="Alignment tool")    
+    aln_args.add_argument("--min-id", type=float, default=0.9,
+                        help="Minimum sequence identity")
+    aln_args.add_argument("--min-nw-id", type=float, default=0.8,
+                        help="Minimum sequence identity for gap closing")
+    aln_args.add_argument("--skip-nw", action="store_true",
+                        help="Skip NW alignment for coverage refinement")
+    aln_args.add_argument("--min-module-size", type=int, default=100,
+                        help="Minimum size of a module/HSP")
+    aln_args.add_argument("--arc-eq-diffs", type=int, default=30,
+                        help="Maximum distance between modules boundaries to consider them identical.")
+    cluster_args = main_parser.add_argument_group('Clustering')
+    cluster_args.add_argument("--clustering-feature", default="recombination", choices=["breakpoint", "recombination"],
+                        help="Feature to use to cluster phages")
+    cluster_args.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden"],
+                             help="Phage clustering method")
+    cluster_args.add_argument("--resolution", type=float, default=0.2,
+                              help="Cluster density (CPM threshold for community detection for Leiden method)")
+    cluster_args.add_argument("--rotate-parent", action="store_true",
+                        help="Cluster datasets by rotating parent set")
+    plot_args = main_parser.add_argument_group('Plotting')
+    plot_args.add_argument("--plot-coverages", action="store_true",
                         help="Display coverage for phages")
-    main_parser.add_argument("--threads", type=int, default=10,
-                        help="Number of threads for alignment")
+    plot_args.add_argument("--plot-fmt", default="html", choices=["html", "svg"],
+                        help="Figure format")
+    plot_args.add_argument("--group-pattern", default=None,
+                        help="Regex pattern for coloring groups for recombination graph")
 
     # Simulation
     sim_parser = subparsers.add_parser("simulate", help="Simulate recombinant populations",
                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    sim_parser.add_argument("-m", "--n-modules", type=int, default=30)        
-    sim_parser.add_argument("-n", "--n-parents", type=int, default=10)        
-    sim_parser.add_argument("-k", "--n-subpopulations", type=int, default=3)
-    sim_parser.add_argument("-o", "--outdir", default=TEST_DIR)
-    sim_parser.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
-    sim_parser.add_argument("--n-variants-range", type=int, nargs=2, default=(5, 10))        
-    sim_parser.add_argument("--n-gen-range", type=int, nargs=2, default=(2, 10))        
-    sim_parser.add_argument("--rate-range", type=float, nargs=2, default=(0.1, 0.9))
+    genetic_args = sim_parser.add_argument_group('Genetic pool')
+    genetic_args.add_argument("--n-modules", type=int, default=30)
+    genetic_args.add_argument("--n-variants-range", type=int, nargs=2, default=(5, 10))
+    genetic_args.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
+
+    population_args = sim_parser.add_argument_group('Populations')
+    population_args.add_argument("--n-subpop", type=int, default=3)
+    population_args.add_argument("--subpop-size-lam", type=int, default=3)
+    population_args.add_argument("--n-gen-range", type=int, nargs=2, default=(5, 10))
+    population_args.add_argument("--rate-range", type=float, nargs=2, default=(0.1, 0.7))
+    sim_parser.add_argument("--outdir", default=TEST_DIR)
 
     args = parser.parse_args()
 
@@ -120,21 +127,28 @@ def setup_populations(args):
 
     return args
 
-def find_outputs(outdir):
-    outputs = dict(raw_aln=Path(outdir, "raw_alignments.csv"))
+def find_outputs(outdir, aligner="minimap2"):
+    interm_dir = Path(outdir, "interm")
+    interm_dir.mkdir(exist_ok=True)
+    
+    folders = {
+        key: Path(outdir, "interm", name) for (key, name) in [
+            ("raw_cov", "simplified_coverage"),
+            ("@mapped", "missing_data"),
+            ("graphs", "overlap_graphs")
+        ]
+    }
+    outputs = dict(raw_aln=Path(interm_dir, aligner).with_suffix(".csv"))
 
-    for (key, folder, ext) in [
-            ("raw_cov", "simplified_coverage", "csv"),
-            ("@mapped", "missing_data", "csv"),
-            ("graphs", "overlap_graphs", "pickle")
-    ]:
+    for (key, folder) in folders.items():
         outputs[key] = {}
-        folder = Path(outdir, folder)
-        if not folder.is_dir():
-            continue
+        folder.mkdir(exist_ok=True)
+        
+        ext = "pickle" if "graph" in key else "csv"
         for fpath in Path(folder).glob(f"*.{ext}"):
             outputs[key][fpath.stem] = fpath
-    return outputs
+
+    return (folders, outputs)
 
 def setup_logger(name, log_file, level=logging.INFO):
     """
