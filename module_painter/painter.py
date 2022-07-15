@@ -10,7 +10,7 @@ from module_painter.coverage import Coverage
 from module_painter.wrapper import blastn, minimap2, filter_alignments
 from module_painter.breakpoints import map_missing_parents, set_breakpoint_ids
 from module_painter.parent_selection import select_by_recombinations, select_by_breakpoints, get_breakpoints
-from module_painter.clustering import get_links
+from module_painter.clustering import get_links, summarize_recombinations
 
 TRUTH = dict(
     R="MAJAM",
@@ -29,7 +29,7 @@ TRUTH = dict(
 )
 
 ALN_PARAMS = dict(
-    minimap2={"z": 50, "N": 100, "U": 100,
+    minimap2={"z": 50, "U": 100,
               "no-long-join": True, "c": True, "P": True},
     blastn={"gapopen": 5, "gapextend": 2}
 )
@@ -41,7 +41,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
 
     logger = logging.getLogger("module-painter")
 
-    outputs = find_outputs(outdir)
+    (folders, outputs) = find_outputs(outdir, aligner)
 
     populations = [
         concatenate_fasta(*parents, outdir=outdir, min_length=min_length,
@@ -66,7 +66,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
 
     coverages = []
     for child in alns.sacc.unique():
-        cov_file = Path(outdir, "simplified_coverage", f"{child}.csv")
+        cov_file = Path(folders["raw_cov"], f"{child}.csv")
         # If cov_file doesn't exist but next step started, then len(cov) < 2
         next_step_started = any(outputs["@mapped"])
         if resume and (cov_file.is_file() or next_step_started):
@@ -91,10 +91,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
         coverages = [Coverage.from_csv(out) for out in outputs["@mapped"].values()]
     else:
         logger.info(f"Mapping missing parents (n_children={len(coverages)})")
-        map_missing_parents(populations[1], coverages, outdir=f"{outdir}/missing_data", threads=threads)
-
-    graph_dir = Path(outdir, "overlap_graphs")
-    graph_dir.mkdir(exist_ok=True)
+        map_missing_parents(populations[1], coverages, outdir=folders["@mapped"], threads=threads)
 
     if resume and all(cov.sacc in outputs["graphs"] for cov in coverages):
         logger.info(f"Loading overlap graphs (resume)")
@@ -102,21 +99,23 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
     else:
         overlap_graphs = [cov.get_overlap_graph(min_overlap=50) for cov in coverages]
         logger.info("Mapping breakpoints")
-        set_breakpoint_ids(overlap_graphs, populations[1], outdir=outdir, threads=threads)
-
+        set_breakpoint_ids(overlap_graphs, populations[1],
+                           outdir=folders["graphs"], threads=threads)
         logger.info("Parent selection: by recombinations")
         select_by_recombinations(overlap_graphs)
         logger.info("Parent selection: by breakpoint")
         select_by_breakpoints(overlap_graphs)
 
         for graph in overlap_graphs:
-            graph.write_pickle(Path(graph_dir, f"{graph['sacc']}.pickle"))
+            graph.write_pickle(Path(folders["graphs"], f"{graph['sacc']}.pickle"))
 
     breakpoints = get_breakpoints(overlap_graphs)
-    links = get_links(breakpoints, feature=clustering_feature, outdir=outdir)
+    rc = summarize_recombinations(breakpoints, outdir)
+    links = get_links(breakpoints, feature=clustering_feature)
 
     return dict(
         graphs=overlap_graphs,
         breakpoints=breakpoints,
+        rc=rc,
         links=links
     )

@@ -25,7 +25,7 @@ def set_breakpoint_ids(graphs, fasta, min_id=0.9, min_overlap=50, max_dist=100, 
     )
 
     #===== Assign bin ids ====#
-    bk_fasta = subset_fasta(fasta, breakpoint_data, min_len=min_overlap, outprefix=f"{outdir}/breakpoints")
+    bk_fasta = subset_fasta(fasta, breakpoint_data, min_len=min_overlap, outprefix=outdir)
     homology_graph = build_homology_graph(bk_fasta, min_id=min_id, min_size_ratio=0.5, verbose=0, threads=threads)
 
     #==== Extract connected components ====#

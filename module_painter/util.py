@@ -16,7 +16,6 @@ def subset_fasta(filename, subset_df, min_len=0, outprefix="/tmp"):
 
     # Make output directory if it doesn't exist
     output = Path(outprefix, Path(filename).name)
-    output.parent.mkdir(exist_ok=True, parents=True)
 
     saccs = set(subset_df.index.get_level_values("sacc"))
 
