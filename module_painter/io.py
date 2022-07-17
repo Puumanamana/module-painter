@@ -53,7 +53,7 @@ def parse_args():
     cluster_args = main_parser.add_argument_group('Clustering')
     cluster_args.add_argument("--clustering-feature", default="recombination", choices=["breakpoint", "recombination"],
                         help="Feature to use to cluster phages")
-    cluster_args.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden"],
+    cluster_args.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden", "infomap"],
                              help="Phage clustering method")
     cluster_args.add_argument("--resolution", type=float, default=0.2,
                               help="Cluster density (CPM threshold for community detection for Leiden method)")
@@ -62,7 +62,7 @@ def parse_args():
     plot_args = main_parser.add_argument_group('Plotting')
     plot_args.add_argument("--plot-coverages", action="store_true",
                         help="Display coverage for phages")
-    plot_args.add_argument("--plot-fmt", default="html", choices=["html", "svg"],
+    plot_args.add_argument("--plot-fmt", default="html",
                         help="Figure format")
     plot_args.add_argument("--group-pattern", default=None,
                         help="Regex pattern for coloring groups for recombination graph")
@@ -72,14 +72,14 @@ def parse_args():
                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     genetic_args = sim_parser.add_argument_group('Genetic pool')
     genetic_args.add_argument("--n-modules", type=int, default=30)
-    genetic_args.add_argument("--n-variants-range", type=int, nargs=2, default=(5, 10))
+    genetic_args.add_argument("--n-variants-range", type=int, nargs=2, default=(2, 5))
     genetic_args.add_argument("--module-size-range", type=int, nargs=2, default=(200, 500))
 
     population_args = sim_parser.add_argument_group('Populations')
     population_args.add_argument("--n-subpop", type=int, default=3)
     population_args.add_argument("--subpop-size-lam", type=int, default=3)
-    population_args.add_argument("--n-gen-range", type=int, nargs=2, default=(5, 10))
-    population_args.add_argument("--rate-range", type=float, nargs=2, default=(0.1, 0.7))
+    population_args.add_argument("--n-gen-range", type=int, nargs=2, default=(1, 6))
+    population_args.add_argument("--rate-range", type=float, nargs=2, default=(0.1, 0.3))
     sim_parser.add_argument("--outdir", default=TEST_DIR)
 
     args = parser.parse_args()

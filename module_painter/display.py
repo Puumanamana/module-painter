@@ -6,7 +6,8 @@ import pandas as pd
 import numpy as np
 from bokeh.models import HoverTool
 from bokeh.palettes import Colorblind, Turbo256, linear_palette
-from bokeh.io import export_svg
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 import holoviews as hv
 from holoviews import dim
@@ -27,27 +28,27 @@ def get_cmap(factor):
 
     return cmap
 
-def custom_cmap():
-    return dict(
-        A="#F1C40F", # yellow/orange
-        B="#40E0D0", # light blue
-        C="#008080", # teal
-        D="#FF0000", # red
-        E="#808000", # olive
-        F="#FF7F50", # orange
-        G="#E98DFF", # purple
-        H="#008000", # green
-        I="#0000FF", #  
-        J="#3498DB", # blue
-        K="#641E16", # dark red
-        L="#800000", # brown
-        M="#C911F6" # pink
-    )
-
 def normalize(x, start, end):
     return 100 * (x-start)/(end-start)
 
-def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
+def remove_overlap(df):
+    cur_end = df.send
+    next_start = np.roll(df.sstart, -1)
+    
+    overlap = (cur_end - next_start).values
+    # Wrapping condition. Rolling doesnt quite work
+    overlap[-1] -= df.slen.iloc[0]
+    # Cannot use boolean indexing for shifting
+    overlap_cur_idx = df.index[overlap > 0]
+    overlap_next_idx = np.roll(df.index, -1)[overlap>0]
+    overlap_vals = overlap[overlap > 0]
+    
+    df.loc[overlap_cur_idx, "send"] -= overlap_vals // 2
+    df.loc[overlap_next_idx, "sstart"] += overlap_vals // 2
+
+    return df
+
+def prepare_data(graphs, norm=True, clusters=None, disjoint=False, remove_na=True):
     graphs = {graph["sacc"]: graph for graph in graphs}
     graphs = [graphs[sacc] for cluster in clusters for sacc in cluster]
     
@@ -58,6 +59,10 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         for vals in zip(*[g.vs[col] for col in cols])
     ], columns=cols)
 
+    if remove_na:
+        data = data[~data.parent.str.contains("@")]
+    if disjoint:
+        data = data.groupby("sacc").apply(remove_overlap)
     if norm:
         data["extra"] = data.send - data.slen
 
@@ -68,6 +73,10 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
             to_add["send"] = data.extra
 
             data = pd.concat([data, to_add]).sort_values(by=["sacc", "sstart", "send"]).reset_index(drop=True)
+    return data
+    
+def display_phages_hv(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
+    data = prepare_data(graphs, norm=norm, clusters=clusters)
 
     hover = HoverTool(tooltips=[(x, f"@{x.lower()}") for x in ["parent", "sacc", "sstart", "send"]])
     
@@ -89,14 +98,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         legend_opts=legend_opts,
     )
 
-    cmap = custom_cmap()
-    
-    for parent in data.parent.unique():
-        if "@" in parent:
-            cmap[parent] = "gray"
-    remaining_parents = set(data.parent.unique()).difference(cmap.keys())
-    remaining_cmap = get_cmap(remaining_parents)
-    cmap.update(remaining_cmap)
+    cmap = get_cmap(data.parent)
 
     subplots = []
 
@@ -106,7 +108,7 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         data_c = data[data.sacc.isin(cluster)].copy()
         data_c["sacc_loc"] = pd.Categorical(data_c.sacc).codes
 
-        parents_all = {p for p in data_c.parent if "@" not in p}
+        parents_all = {p for p in data_c.parent}
        
         subplot_layer = []
 
@@ -140,7 +142,39 @@ def display_phages(graphs, clusters=None, norm=True, outdir=None, fmt="html"):
         
     seg = hv.Layout(subplots).opts(shared_axes=False).cols(1)
 
-    if fmt == "html":
-        hv.save(seg, Path(outdir, "paintings.html"))
-    else:
-        export_svg(hv.render(seg), filename=Path(outdir, "paintings.svg"))
+    hv.save(seg, Path(outdir, "paintings.html"))
+        
+def display_phages_plt(graphs, clusters=None, norm=True, outdir=None, fmt="pdf"):
+    data = prepare_data(graphs, norm=norm, clusters=clusters, disjoint=True)
+    cluster_map = {p: i for (i, phages) in enumerate(clusters) for p in phages}
+    data["cluster"] = [cluster_map[sacc] for sacc in data.sacc]
+
+    colormap = get_cmap(data.parent)
+
+    sns.set(style='ticks', font_scale=1)
+    g = sns.FacetGrid(data=data, col="cluster", aspect=2, col_wrap=2, sharey=False, sharex=False)
+    g.map_dataframe(plt_draw_intervals, x1="sstart", x2="send", y="sacc", hue="parent",
+                    cmap=colormap, data=data)
+    g.add_legend()
+    g.set(ylabel="")
+    g.savefig(Path(outdir, f"paintings.{fmt}"))
+        
+def plt_draw_intervals(data=None, x1="sstart", x2="send", y="sacc", hue="parent",
+                       cmap=None, lw=20, **kw):
+    
+    y_pos = {sacc:i for (i, sacc) in enumerate(data.sacc.unique())}
+
+    grouped = data.groupby(hue)[[x1,x2,y]].agg(list).T.to_dict()
+
+    vbar_h = 0.09 * (data[y].nunique() - 1/data[y].nunique())
+    for (parent, itv) in grouped.items():
+        color = cmap[parent]
+        y_order = [y_pos[sacc] for sacc in itv[y]]
+        (vbar_min, vbar_max) = zip(*[(pos-vbar_h, pos+vbar_h) for pos in y_order])
+        
+        plt.hlines(y_order, itv[x1], itv[x2], color=color, lw=lw, label=parent, alpha=0.8)
+        plt.vlines(itv[x1], vbar_min, vbar_max, color, lw=2)
+        plt.vlines(itv[x2], vbar_min, vbar_max, color, lw=2)
+    
+    plt.yticks(list(y_pos.values()), list(y_pos.keys()))
+    # plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)

@@ -5,7 +5,7 @@ from module_painter.io import parse_args, setup_logger
 from module_painter.painter import paint
 from module_painter.simulation import simulate
 from module_painter.clustering import cluster_phages
-from module_painter.display import display_phages
+from module_painter.display import display_phages_hv, display_phages_plt
 
 def main():
     args = parse_args()
@@ -50,7 +50,10 @@ def main():
         rc.to_csv(f"{args.outdir}/recombinations.csv")        
         
         ## Shared breakpoints/recombinations
-        links = pd.concat([p["links"] for p in paintings if not p["links"].empty])
+        all_links = [p["links"] for p in paintings if not p["links"].empty]
+        if not all_links:
+            return
+        links = pd.concat(all_links)
         links.to_csv(f"{args.outdir}/links.csv")
     else:
         painting = paint(**vars(args))
@@ -82,6 +85,11 @@ def main():
     #========================#
     if not args.rotate_parent and args.plot_coverages:
         logger.info(f"Interactive plot in {args.outdir}")
-        display_phages(paintings[0]["graphs"], clusters=clusters,
-                        norm=True, outdir=args.outdir, fmt=args.plot_fmt)
+
+        if args.plot_fmt in {"html", "svg"}:
+            display_phages_hv(paintings[0]["graphs"], clusters=clusters,
+                              norm=True, outdir=args.outdir, fmt=args.plot_fmt)
+        else:
+            display_phages_plt(paintings[0]["graphs"], clusters=clusters,
+                               norm=True, outdir=args.outdir, fmt=args.plot_fmt)
     

@@ -86,9 +86,10 @@ class Phage:
     def evolve(self, lam=3):
         self.abund = 1 + np.random.poisson(lam)
 
-    def as_fasta(self, modules):
+    def as_fasta(self, modules, junctions):
         meta = "-".join(map(str, self.variants))
-        seq = "".join(module[variant] for (module, variant) in zip(modules, self.variants))
+        seq = "".join(module[variant]+junction[0] for (module, variant, junction) in
+                      zip(modules, self.variants, junctions))
 
         return f">{self.idx} {meta}\n{seq}\n"
 
@@ -111,7 +112,7 @@ class PhagePopulation:
             return next(phage for phage in self.phages if phage.idx == key)
         except StopIteration:
             print(f"Phage {key} not found in population")
-
+    
     def add(self, phage):
         phage.idx = f"{self.name}.{phage.idx}"
         self.phages.add(phage)
@@ -160,7 +161,6 @@ class PhagePopulation:
         child = Phage.from_recombination(phages, pos, idx=len(self))
 
         if child in self.phages:
-            logger.debug("Existing variant exists. Skipping")
             return
 
         child.evolve() # not included in model for now
@@ -174,18 +174,52 @@ class PhagePopulation:
 
         self.rc_count += 1
 
-    def shared_evolution(self):
+    def shared_evolution(self, return_dict=False):
         shared = {}
         for (phage1, phage2) in combinations(self.phages, 2):
-            shared[(phage1.idx, phage2.idx)] = len(
+            shared[(phage1, phage2)] = len(
                 phage1.history & phage2.history
             )
+
+        if return_dict:
+            return shared
+        
+        shared = pd.Series(shared)
+        shared.index = shared.index.map(lambda p: (p[0].idx, p[1].idx))
+
         return shared
 
-    def to_fasta(self, modules, output=None, mode="a"):
+    def subpopulations(self):
+        kinship = self.shared_evolution(return_dict=True)
+        
+        neighbors = {p: [] for p in self.phages}
+        for (p1, p2), x in kinship.items():
+            if x == 0:
+                continue
+            neighbors[p1].append(p2)
+            neighbors[p2].append(p1)
+
+        visited = set()
+        
+        for p in self.phages:
+            if p in visited:
+                continue
+            component = []
+            remaining = [p]
+            while remaining:
+                q = remaining.pop()
+                if q in visited:
+                    continue
+                visited.add(q)
+                remaining += neighbors[q]
+                component.append(q)
+
+            yield component
+            
+    def to_fasta(self, modules, junctions, output=None, mode="a"):
         with open(output, mode) as writer:
             for (i, phage) in enumerate(self.phages):
-                entry = phage.as_fasta(modules)
+                entry = phage.as_fasta(modules, junctions)
                 writer.write(entry)
 
 def generate_module(min_size, max_size, n_variants):
@@ -225,26 +259,34 @@ def simulate(n_modules=None, n_variants_range=None, module_size_range=None,
                 for (k, subpop) in enumerate(parents)]
 
     modules = [generate_module(*module_size_range, ni) for ni in n_variants]
+    junctions = [generate_module(*module_size_range, 1) for _ in n_variants]
     
     # Write populations to fasta file
     for (name, data) in [("parents", parents), ("children", children)]:
         outfile = Path(outdir, f"{name}.fasta")
         outfile.unlink(missing_ok=True)
         for k, subpop in enumerate(data):
-            subpop.to_fasta(modules, output=outfile)
+            subpop.to_fasta(modules, junctions, output=outfile)
 
     # Save some metadata
-    clusters = pd.Series({phage.idx: k for k, pop in enumerate(children)
-                          for phage in pop.phages}).rename("subpop_id")
+    clusters = {}
+    k = -1
+    for i, pop in enumerate(children):
+        for subpop in pop.subpopulations():
+            k += 1
+            for p in subpop:
+                clusters[p.idx] = k
+
+    clusters = pd.Series(clusters, name="subpop_id")
     clusters.index.name = "seq_id"
     clusters.to_csv(f"{outdir}/subpopulations.csv")
 
     summary = pd.DataFrame([pop.summarize() for pop in children])
     summary["subpop_size_lambda"] = subpop_size_lam
     summary.to_csv(f"{outdir}/summary.csv", index=False)
-    
+
     shared = pd.concat([
-        pd.Series(subpop.shared_evolution())
+        subpop.shared_evolution()
         for subpop in children
     ])
     shared.to_csv(f"{outdir}/shared_evolution.csv", header=None)

@@ -46,10 +46,11 @@ def cluster_phages(links, outdir=None, method="leiden", group_pattern=None, reso
 
     recomb_graph = igraph.Graph()
     recomb_graph.add_vertices(list({x for tup in links.index for x in tup}))
-    recomb_graph.add_edges(links.index)
+    edge_weights = links.index.value_counts()
+    recomb_graph.add_edges(edge_weights.index, attributes=dict(weight=edge_weights.values))
 
     vnames = recomb_graph.vs["name"]
-    aes = dict(vertex_label=vnames)
+    aes = dict(vertex_label=vnames, edge_width=recomb_graph.es["weight"])
                # vertex_size=30, vertex_label_size=20)
     
     if group_pattern is not None:
@@ -65,7 +66,10 @@ def cluster_phages(links, outdir=None, method="leiden", group_pattern=None, reso
     if method == "connected_components":
         communities = recomb_graph.components()
     elif method == "leiden":
-        communities = recomb_graph.community_leiden(n_iterations=-1, resolution_parameter=resolution)
+        communities = recomb_graph.community_leiden(n_iterations=-1, resolution_parameter=resolution, weights="weight",
+                                                    objective_function="CPM")
+    elif method == "infomap":
+        communities = recomb_graph.community_infomap(edge_weights="weight")
     else:
         raise("Clustering method not yet suported")
 
