@@ -31,7 +31,8 @@ def get_links(df, feature="recombination", outdir=None):
 
     links = (df.groupby(keys).sacc.agg(lambda x: list(combinations(x, 2)))
              .explode().dropna()
-             .droplevel(keys[0]).reset_index()
+             .droplevel(keys[0])
+             .reset_index()
              .set_index("sacc").parents)
 
     if not links.empty:

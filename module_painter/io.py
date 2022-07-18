@@ -42,20 +42,20 @@ def parse_args():
                         help="Alignment tool")    
     aln_args.add_argument("--min-id", type=float, default=0.9,
                         help="Minimum sequence identity")
-    aln_args.add_argument("--min-nw-id", type=float, default=0.8,
+    aln_args.add_argument("--min-nw-id", type=float, default=0.9,
                         help="Minimum sequence identity for gap closing")
     aln_args.add_argument("--skip-nw", action="store_true",
                         help="Skip NW alignment for coverage refinement")
     aln_args.add_argument("--min-module-size", type=int, default=100,
                         help="Minimum size of a module/HSP")
-    aln_args.add_argument("--arc-eq-diffs", type=int, default=30,
+    aln_args.add_argument("--arc-eq-diffs", type=int, default=15,
                         help="Maximum distance between modules boundaries to consider them identical.")
     cluster_args = main_parser.add_argument_group('Clustering')
     cluster_args.add_argument("--clustering-feature", default="recombination", choices=["breakpoint", "recombination"],
                         help="Feature to use to cluster phages")
     cluster_args.add_argument("--clustering-method", default="leiden", choices=["connected_components", "leiden", "infomap"],
                              help="Phage clustering method")
-    cluster_args.add_argument("--resolution", type=float, default=0.2,
+    cluster_args.add_argument("--resolution", type=float, default=0.8,
                               help="Cluster density (CPM threshold for community detection for Leiden method)")
     cluster_args.add_argument("--rotate-parent", action="store_true",
                         help="Cluster datasets by rotating parent set")

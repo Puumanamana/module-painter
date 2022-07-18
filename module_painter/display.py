@@ -152,7 +152,7 @@ def display_phages_plt(graphs, clusters=None, norm=True, outdir=None, fmt="pdf")
     colormap = get_cmap(data.parent)
 
     sns.set(style='ticks', font_scale=1)
-    g = sns.FacetGrid(data=data, col="cluster", aspect=2, col_wrap=2, sharey=False, sharex=False)
+    g = sns.FacetGrid(data=data, row="cluster", aspect=3, sharey=False, sharex=False)
     g.map_dataframe(plt_draw_intervals, x1="sstart", x2="send", y="sacc", hue="parent",
                     cmap=colormap, data=data)
     g.add_legend()
@@ -160,7 +160,7 @@ def display_phages_plt(graphs, clusters=None, norm=True, outdir=None, fmt="pdf")
     g.savefig(Path(outdir, f"paintings.{fmt}"))
         
 def plt_draw_intervals(data=None, x1="sstart", x2="send", y="sacc", hue="parent",
-                       cmap=None, lw=20, **kw):
+                       cmap=None, lw=15, **kw):
     
     y_pos = {sacc:i for (i, sacc) in enumerate(data.sacc.unique())}
 

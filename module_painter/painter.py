@@ -81,7 +81,7 @@ def paint(parents=None, children=None, outdir=None, resume=False, rename=False, 
 
         if len(coverage) < 2: logger.debug(f"Discarding {child} (only one parent left)")
         else: coverages.append(coverage)
-        
+
     if not coverages:
         logger.warning(f"All coverages were filtered out. Exiting")
         return dict()
