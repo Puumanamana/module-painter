@@ -21,7 +21,8 @@ setup(name='module-painter',
           'scikit-learn',
           'igraph',
           'mappy',
-          'psutil'
+          'psutil',
+          'seaborn'
       ],
       extras_require = {
           'full': ['pycairo']

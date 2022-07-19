@@ -13,6 +13,7 @@ dependencies:
   - python-igraph >=0.8.3
   - mappy
   - matplotlib
+  - seaborn
   - holoviews
   - pip
   - pip:

@@ -19,10 +19,13 @@ BLAST_HEADER = ALN_HEADER + ["bitscore", "pident"]
 logger = logging.getLogger('module-painter')
 
 def check_if_exists(func):
-    binary = func.__name__
-    if not shutil.which(binary):
-        raise FileNotFoundError(f"Did you install {binary}?")
-    return func
+    def wrapper(*args, **kwargs):
+        binary = func.__name__
+        if not shutil.which(binary):
+            raise FileNotFoundError(f"Did you install {binary}?")
+        res = func(*args, **kwargs)
+        return res
+    return wrapper
 
 @check_if_exists
 def minimap2(query, ref, **kwargs):
